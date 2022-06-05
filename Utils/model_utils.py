@@ -11,18 +11,19 @@ def datetime_to_epoch(datetime):
     return datetime.astype('int64') // 1e9
 
 
-def create_grid_from_coords(R, t, N_pixels=20):
+def create_grid_from_coords(R, t, R_scaler, N_pixels=20):
     '''
     Function tha creates a grid from the coordinates of the systems
     R - numpy array of the system coordinates, dimensions = [N_systems, 2] where 2 corresponds to lat,lon
     t - time vector
+    R_scaler - used to define the minimum value that it can take on the grid
     N_pixels - number of pixels per dimension of the 2d grid
     '''
-
+    min_value = R_scaler.transform([[0]]).item() #this is the minimum value in the transformed space that these coordinate can take
     X1range = max(R[:, 0]) - min(R[:, 0])
     X2range = max(R[:, 1]) - min(R[:, 1])
-    r1 = np.linspace(min(R[:, 0]) - 0.05 * X1range, max(R[:, 0]) + 0.05 * X1range, num=N_pixels)
-    r2 = np.linspace(min(R[:, 1]) - 0.05 * X2range, max(R[:, 1]) + 0.05 * X2range, num=N_pixels)
+    r1 = np.linspace(max(min(R[:, 0]) - 0.05 * X1range, min_value), max(R[:, 0]) + 0.05 * X1range, num=N_pixels)
+    r2 = np.linspace(max(min(R[:, 1]) - 0.05 * X2range, min_value), max(R[:, 1]) + 0.05 * X2range, num=N_pixels)
     rA, rB = np.meshgrid(r1, r2)
     r = np.hstack((rA.reshape(-1, 1), rB.reshape(-1, 1)))  # Flattening grid for use in kernel functions
     Rplot = np.tile(r, [t.shape[0], 1, 1])
@@ -65,7 +66,9 @@ def stack_dataframe(pve_df, lats_map, longs_map):
     stacked['latitude'] = stacked['farm'].map(lats_map)
     stacked['longitude'] = stacked['farm'].map(longs_map)
     stacked['datetime'] = pd.to_datetime(stacked['datetime'])
-    stacked['epoch'] = datetime_to_epoch(stacked['datetime'])
+    # stacked['epoch'] = datetime_to_epoch(stacked['datetime'])
+    stacked['epoch'] = stacked.index
+
     return stacked
 
 def train_split_3d(t, R, Y,  train_frac = 0.9):
