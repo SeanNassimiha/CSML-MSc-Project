@@ -6,9 +6,10 @@ import matplotlib.cm as cm
 import pandas as pd
 from convertbng.util import convert_bng, convert_lonlat
 import time
-
+import math
 import logging
-import sys
+import cv2
+import sys, os
 sys.path.append('../Utils')
 import model_utils as mutils
 import kernels_definitions as kerns
@@ -18,34 +19,43 @@ logging.basicConfig(format='%(asctime)s %(message)s', level = logging.INFO)
 ######################### GLOBAL VARIABLES
 
 #DATA VARIABLES
-SYSTEMS_NUM = 30 #len(data.columns)
-TIMESTEPS_NUM = 500 #len(data.index)
+SYSTEMS_NUM = 100 #len(data.columns)
+TIMESTEPS_NUM = 1000 #len(data.index)
 TRAIN_FRAC = 0.9
 GRID_PIXELS = 20
 
 #OPTIMISATION VARIABLES
 LR_ADAM = 0.05
 LR_NEWTON = 0.5
-ITERS = 5
+ITERS = 50
 
 #GP Variables
-VAR_Y = 1.
-VAR_F = 1.
-LEN_TIME = 5  # step size = 1 (hour)
-LEN_SPACE = 1
+VAR_Y = 0.5
+VAR_F = 0.5
+LEN_TIME = 6 #6 would mean 30 mins
+LEN_SPACE = 0.1
 
 #Want to use a sparse approximation
 SPARSE = True
 #Should we optimise the inducing points
 OPT_Z = True  # will be set to False if SPARSE=SPARSE
+
 #use a mean field approximation?
 MEAN_FIELD = False
+
+#PATH TO SAVE OUTPUTS
+model_string = str(int(MEAN_FIELD)) + "_" + str(int(SYSTEMS_NUM)) + "_" + str(int(TIMESTEPS_NUM))+ "_" + str(int(LEN_TIME)) + "_" + str(int(LEN_SPACE)) + "_" + str(int(ITERS)) + '/'
+# model_string = 'Try_new_kernel_separate/'
+folder = 'output/'+model_string
+try:
+    os.mkdir(folder)
+except:
+    raise Exception("The selected folder has been already used")
 
 ######################### IMPORTS
 logging.info('Importing the data')
 data =  pd.read_csv('../../Data/pv_power_df_5day.csv', index_col='datetime').drop(columns=['2657', '2828']) #DROPPING FAULTY SYSTEMS
 uk_pv = pd.read_csv('../../Data/system_metadata_location_rounded.csv')
-
 
 ######################### DATASET CREATION
 logging.info('create the X,Y datasets')
@@ -64,27 +74,27 @@ X = np.vstack([X[:, 0],
               np.array(british_national_grid_coords[0]),
               np.array(british_national_grid_coords[1])]).T
 
-#Create a space-time grid from X and Y
+# Create a space-time grid from X and Y
 t, R, Y = bayesnewton.utils.create_spatiotemporal_grid(X, Y)
 
-#train test split for 3 dimensional data
-t_train, t_test, R_train, R_test, Y_train, Y_test = mutils.train_split_3d(t, R, Y, train_frac = TRAIN_FRAC)
+# train test split for 3 dimensional data
+t_train, t_test, R_train, R_test, Y_train, Y_test = mutils.train_split_3d(t, R, Y, train_frac=TRAIN_FRAC)
 
-#get the mask of the test points
+# get the mask of the test points
 test_mask = np.in1d(t.squeeze(), t_test.squeeze())
 
-#Scale the data
-scaled_values = mutils.scale_2d_train_test_data(R, Y, R_train, R_test, Y_train, Y_test )
+# Scale the data
+scaled_values = mutils.scale_2d_train_test_data(R, Y, R_train, R_test, Y_train, Y_test)
 R_scaler, R_scaled, R_train_scaled, R_test_scaled, Y_scaler, Y_scaled, Y_train_scaled, Y_test_scaled = scaled_values
 
-#here get a list of scaled coordinates (frozen because at some point in time)
+# here get a list of scaled coordinates (frozen because at some point in time)
 R_scaled_frozen = R_scaled[0]
 
-#Create a grid to perform prediction/interpolation on
-r1, r2, Rplot = mutils.create_grid_from_coords(R = R_scaled_frozen, t = t, R_scaler = R_scaler, N_pixels = GRID_PIXELS)
+# #Create a grid to perform prediction/interpolation on
+r1, r2, Rplot = mutils.create_grid_from_coords(R=R_scaled_frozen, t=t, R_scaler=R_scaler, N_pixels=GRID_PIXELS)
 
 if SPARSE:
-    z = mutils.create_ind_point_grid(R_scaled_frozen, n_points = None)
+    z = mutils.create_ind_point_grid(R_scaled_frozen, n_points=None)
 else:
     z = R[0, ...]
 
@@ -99,13 +109,19 @@ length_of_one_year = length_of_one_day * 365.25
 
 kern = kerns.get_SpatioTemporal_combined(variance=VAR_F,
                                            lengthscale_time=LEN_TIME,
-                                           lengthscale_space=[LEN_SPACE, LEN_SPACE/ 5],
+                                           lengthscale_space=[LEN_SPACE, LEN_SPACE],
                                            z=z,
                                            sparse=SPARSE,
                                            opt_z=OPT_Z,
                                            matern_order = '32',
                                            conditional='Full')
-
+# kern = kerns.get_separate_kernel(variance=VAR_F,
+#                                            lengthscale_time=LEN_TIME,
+#                                            lengthscale_space=LEN_SPACE,
+#                                            z=z,
+#                                            sparse=SPARSE,
+#                                            opt_z=OPT_Z,
+#                                            conditional='Full')
 
 ######################### MODEL TRAINING
 logging.info('Define likelihood, model, target function and parameters')
@@ -126,7 +142,7 @@ def train_op():
     opt_hypers(LR_ADAM, dE)
     return E
 
-train_op = objax.Jit(train_op
+# train_op = objax.Jit(train_op)
 
 logging.info('Begin training')
 t0 = time.time()
@@ -135,6 +151,14 @@ for i in range(1, ITERS + 1):
     print('iter %2d, energy: %1.4f' % (i, loss[0]))
 t1 = time.time()
 print('optimisation time: %2.2f secs' % (t1-t0))
+avg_time_taken = (t1-t0)/ITERS
+
+#################### SAVE MODEL
+logging.info('Save the model weights in a numpy zipped file')
+#CAN SAVE THE MODEL THIS WAY
+model_name = folder+'model.npz'
+objax.io.save_var_collection(model_name, model.vars())
+
 
 ######################### METRICS
 logging.info('Calculate predictive distributions, and NLPD')
@@ -156,33 +180,29 @@ print('nlpd: %2.3f' % nlpd)
 logging.info('Calculate the mean prediction for the grid')
 
 z_opt = model.kernel.z.value
-mu = bayesnewton.utils.transpose(posterior_mean)
-mu = Y_scaler.inverse_transform(mu).reshape(-1, GRID_PIXELS, GRID_PIXELS)
+mu = Y_scaler.inverse_transform(posterior_mean.flatten()[:, np.newaxis]).reshape(-1, GRID_PIXELS, GRID_PIXELS)
 Y = Y_scaler.inverse_transform(Y_scaled[:,:,0])
 
 #get lat-lon coordinates
-longitude_grid, latitude_grid = convert_lonlat(R_scaler.inverse_transform(r1[:, np.newaxis]), R_scaler.inverse_transform(r2[:, np.newaxis]))
-longitude_grid, latitude_grid = [x for x in longitude_grid if str(x) != 'nan'], [x for x in latitude_grid if str(x) != 'nan']
+grid_coord = R_scaler.inverse_transform(np.array(np.c_[r1,r2]))
+longitude_grid, latitude_grid =  convert_lonlat(grid_coord[:, 0], grid_coord[:, 1])
 longitude_sys_train, latitude_sys_train = convert_lonlat(R_train[:,:,0][0], R_train[:,:,1][0])
 longitude_z, latitude_z = convert_lonlat(R_scaler.inverse_transform(z_opt)[:,0], R_scaler.inverse_transform(z_opt)[:,1])
-
-save_result = False
-# del model, kern, Rplot  # , var
 
 logging.info('Plot the time sequence of grid predictions')
 print('plotting ...')
 cmap = cm.viridis
 vmin = np.nanpercentile(Y, 1)
 vmax = np.nanpercentile(Y, 99)
-# get the labels for the dates
+#get the labels for the dates
 dates = pd.to_datetime(a.datetime).dt.date
-days_index = max(97, int(((len(t) / 5) // 97) * 97))  # number of time intervals to match 5 beginnings of days
+days_index = max(97, int(((len(t) / 5) // 97) * 97)) #number of time intervals to match 5 beginnings of days
 
-for time_step in range(t.shape[0])[:50]:
+for time_step in range(t.shape[0]):
     f, (a0, a1) = plt.subplots(2, 1, gridspec_kw={'height_ratios': [20, 1]})
     f.set_figheight(8)
     # f.set_figwidth(8)
-    im = a0.imshow(mu[time_step].T, cmap=cmap, vmin=vmin, vmax=vmax,
+    im = a0.imshow(mu[time_step], cmap=cmap, vmin=vmin, vmax=vmax,
                    extent=[longitude_grid[0], longitude_grid[-1], latitude_grid[0], latitude_grid[-1]], origin='lower')
     a0.scatter(longitude_sys_train, latitude_sys_train, cmap=cmap, vmin=vmin, vmax=vmax,
                c=np.squeeze(Y[time_step]), s=50, edgecolors='black')
@@ -201,8 +221,26 @@ for time_step in range(t.shape[0])[:50]:
     a1.set_xticks(np.asarray(t[1:-1:days_index][:, 0].tolist()),
                   labels=dates[0:-1:days_index].values,
                   fontsize=10)
-    plt.show()
+
+    direction = f'images/fig_'+str(time_step).zfill(len(str(TIMESTEPS_NUM)))+'.png'
+    f.savefig(direction)
+    # plt.show()
     plt.close(f)
+
+logging.info('Save the images evolution as a video')
+#CODE THAT GETS THE IMAGES FROM THE IMAGES FOLDER, CONVERTS THEM INTO A VIDEO, AND SAVES THE VIDEO IN THE OUTPUT FOLDER, THEN DELETES THE IMAGES
+image_folder = 'images'
+video_name = folder+'video.mp4'
+images = sorted([img for img in os.listdir(image_folder) if img.endswith(".png")])
+frame = cv2.imread(os.path.join(image_folder, images[0]))
+height, width, layers = frame.shape
+video = cv2.VideoWriter(video_name, cv2.VideoWriter_fourcc(*'MP4V'), 1, (width,height))
+for image in images:
+    video.write(cv2.imread(os.path.join(image_folder, image)))
+cv2.destroyAllWindows()
+video.release()
+#DELETE THE IMAGES FROM THE IMAGE FOLDER
+[os.remove(image_folder+'/'+img) for img in os.listdir(image_folder) if img.endswith(".png")]
 
 
 logging.info('Get the system specific predictions')
@@ -224,15 +262,27 @@ print(f'The test RMSE is {rmse_test.round(3)}')
 
 
 logging.info('Plot the time series individually')
+fig, axs = plt.subplots(math.ceil(SYSTEMS_NUM / 6), 6, figsize=(15, 40))
+fig.subplots_adjust(hspace=.5, wspace=.001)
+axs = axs.ravel()
+
 for i in range(SYSTEMS_NUM):
-    plt.figure(figsize=(10, 7))
-    plt.title(f'Prediction for system {i}')
-    plt.plot(np.arange(len(Y)), Y[:, i], "xk")
-    plt.plot(np.arange(len(Y)), posterior_mean_rescaled[:, i], c="C0", lw=2, zorder=2)
-    plt.fill_between(
-        np.arange(len(Y)),
-        posterior_neg_twostd_rescaled[:, i],
-        posterior_pos_twostd_rescaled[:, i],
-        color="C0",
-        alpha=0.2)
-    plt.xticks(ticks=np.arange(len(Y))[0:-1:days_index], labels=a.datetime[0:-1:days_index].values, size=8)
+#     plt.figure(figsize=(10,7))
+    axs[i].set_title(f'Prediction for system {i}')
+    axs[i].plot(np.arange(len(Y)), Y[:, i], "xk")
+    axs[i].plot(np.arange(len(Y)), posterior_mean_rescaled[:, i], c="C0", lw=2, zorder=2)
+    axs[i].fill_between(
+    np.arange(len(Y)),
+    posterior_neg_twostd_rescaled[:, i],
+    posterior_pos_twostd_rescaled[:, i],
+    color="C0",
+    alpha=0.2)
+axs[i].set_xticks(ticks=np.arange(len(Y))[0:-1:days_index], labels=a.datetime[0:-1:days_index].values, size=8)
+fig.savefig(folder+'time_series_pred.png')
+
+logging.info('Save the model results in a csv table')
+#SAVING THE MODEL RESULTS
+results = pd.DataFrame([avg_time_taken, nlpd, rmse, rmse_train, rmse_test],
+             index=['avg_time_taken', 'nlpd', 'rmse', 'rmse_train', 'rmse_test'], columns = ['results'])
+results.to_csv(folder+'results.csv')
+

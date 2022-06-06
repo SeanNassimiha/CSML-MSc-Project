@@ -19,11 +19,13 @@ def create_grid_from_coords(R, t, R_scaler, N_pixels=20):
     R_scaler - used to define the minimum value that it can take on the grid
     N_pixels - number of pixels per dimension of the 2d grid
     '''
-    min_value = R_scaler.transform([[0]]).item() #this is the minimum value in the transformed space that these coordinate can take
+    min_value_1 = R_scaler.transform([[0, 0]])[0,0] #this is the minimum value in the transformed space that this axis
+    min_value_2 = R_scaler.transform([[0, 0]])[0,1] #this is the minimum value in the transformed space that this axis
+
     X1range = max(R[:, 0]) - min(R[:, 0])
     X2range = max(R[:, 1]) - min(R[:, 1])
-    r1 = np.linspace(max(min(R[:, 0]) - 0.05 * X1range, min_value), max(R[:, 0]) + 0.05 * X1range, num=N_pixels)
-    r2 = np.linspace(max(min(R[:, 1]) - 0.05 * X2range, min_value), max(R[:, 1]) + 0.05 * X2range, num=N_pixels)
+    r1 = np.linspace(max(min(R[:, 0]) - 0.05 * X1range, min_value_1), max(R[:, 0]) + 0.05 * X1range, num=N_pixels)
+    r2 = np.linspace(max(min(R[:, 1]) - 0.05 * X2range, min_value_2), max(R[:, 1]) + 0.05 * X2range, num=N_pixels)
     rA, rB = np.meshgrid(r1, r2)
     r = np.hstack((rA.reshape(-1, 1), rB.reshape(-1, 1)))  # Flattening grid for use in kernel functions
     Rplot = np.tile(r, [t.shape[0], 1, 1])
@@ -82,16 +84,16 @@ def train_split_3d(t, R, Y,  train_frac = 0.9):
     '''
 
     # Train and Test split
-    test_ix = np.sort(np.random.choice(t.shape[0], int(train_frac * len(t)), replace=False))
+    train_ix = np.sort(np.random.choice(t.shape[0], int(train_frac * len(t)), replace=False))
 
-    t_train = t[test_ix]
-    t_test = np.delete(t, test_ix, axis=0)
+    t_train = t[train_ix]
+    t_test = np.delete(t, train_ix, axis=0)
 
-    R_train = R[test_ix]
-    R_test = np.delete(R, test_ix, axis=0)
+    R_train = R[train_ix]
+    R_test = np.delete(R, train_ix, axis=0)
 
-    Y_train = Y[test_ix]
-    Y_test = np.delete(Y, test_ix, axis=0)
+    Y_train = Y[train_ix]
+    Y_test = np.delete(Y, train_ix, axis=0)
 
     return t_train, t_test, R_train, R_test, Y_train, Y_test
 
@@ -112,19 +114,18 @@ def scale_2d_train_test_data(R, Y, R_train, R_test, Y_train, Y_test ):
     # I AM FLATTENING THE ARRAYS AND THEN RESHAPING INTO GRIDS FOR THE SCALER
 
     # create scalers from train data
-    R_scaler = StandardScaler().fit(R_train.flatten()[:, np.newaxis])
-    Y_scaler = StandardScaler().fit(Y_train.flatten()[:, np.newaxis])
+    R_scaler = StandardScaler().fit(R_train[0]) #taking the first datapoint since the positions don't change in time
+    Y_scaler = StandardScaler().fit(Y_train.flatten()[:,np.newaxis]) #reducing the dimensionality
 
-    Y_scaled = Y_scaler.transform(Y.flatten()[:, np.newaxis]).reshape(Y.shape)
-    R_scaled = R_scaler.transform(R.flatten()[:, np.newaxis]).reshape(R.shape)
+    R_scaled = np.tile(R_scaler.transform(R_train[0]), (R.shape[0],1, 1)) #renormalise R and project across time
+    Y_scaled = Y_scaler.transform(Y.flatten()[:,np.newaxis]).reshape(Y.shape)
 
-    # Apply scaler on Train Data
-    R_train_scaled = R_scaler.transform(R_train.flatten()[:, np.newaxis]).reshape(R_train.shape)
-    Y_train_scaled = Y_scaler.transform(Y_train.flatten()[:, np.newaxis]).reshape(Y_train.shape)
+    R_train_scaled = np.tile(R_scaler.transform(R_train[0]), (R_train.shape[0],1, 1)) #renormalise R and project across time
+    Y_train_scaled = Y_scaler.transform(Y_train.flatten()[:,np.newaxis]).reshape(Y_train.shape)
 
     # Apply scaler on Test Data
-    R_test_scaled = R_scaler.transform(R_test.flatten()[:, np.newaxis]).reshape(R_test.shape)
-    Y_test_scaled = Y_scaler.transform(Y_test.flatten()[:, np.newaxis]).reshape(Y_test.shape)
+    R_test_scaled = np.tile(R_scaler.transform(R_test[0]), (R_test.shape[0],1, 1)) #renormalise R and project across
+    Y_test_scaled = Y_scaler.transform(Y_test.flatten()[:,np.newaxis]).reshape(Y_test.shape)
 
     return R_scaler, R_scaled, R_train_scaled, R_test_scaled, Y_scaler, Y_scaled, Y_train_scaled, Y_test_scaled
 

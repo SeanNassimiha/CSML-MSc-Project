@@ -32,6 +32,19 @@ def get_SpatioTemporal_combined(variance, lengthscale_time, lengthscale_space, z
 
     return kern
 
+def get_separate_kernel(variance, lengthscale_time, lengthscale_space, z, sparse, opt_z, conditional='Full'):
+    kern_time = bayesnewton.kernels.Matern32(variance=variance, lengthscale=lengthscale_time)
+    kern_space0 = bayesnewton.kernels.Matern32(variance=variance, lengthscale=lengthscale_space)
+    kern_space1 = bayesnewton.kernels.Matern32(variance=variance, lengthscale=lengthscale_space)
+    kern_space = bayesnewton.kernels.Separable([kern_space0, kern_space1])
+
+    kern = bayesnewton.kernels.SpatioTemporalKernel(temporal_kernel=kern_time,
+                                                    spatial_kernel=kern_space,
+                                                    z=z,
+                                                    sparse=sparse,
+                                                    opt_z=opt_z,
+                                                    conditional=conditional)
+    return kern
 
 # kern_time_day = bayesnewton.kernels.QuasiPeriodicMatern32(variance=VAR_F,
 #                                                     lengthscale_periodic=(length_of_one_day*5),
