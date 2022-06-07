@@ -19,15 +19,15 @@ logging.basicConfig(format='%(asctime)s %(message)s', level = logging.INFO)
 ######################### GLOBAL VARIABLES
 
 #DATA VARIABLES
-SYSTEMS_NUM = 100 #len(data.columns)
-TIMESTEPS_NUM = 1000 #len(data.index)
+SYSTEMS_NUM = 50 # 883 is the max
+TIMESTEPS_NUM = 5000 # 70571 is the max
 TRAIN_FRAC = 0.9
 GRID_PIXELS = 20
 
 #OPTIMISATION VARIABLES
 LR_ADAM = 0.05
 LR_NEWTON = 0.5
-ITERS = 50
+ITERS = 15
 
 #GP Variables
 VAR_Y = 0.5
@@ -42,6 +42,12 @@ OPT_Z = True  # will be set to False if SPARSE=SPARSE
 
 #use a mean field approximation?
 MEAN_FIELD = False
+
+#Number of FPS for the video of the time evolution of predictions
+FPS_VIDEO = 50
+
+#Select the size of minibatches. Yann LeCun suggests <= 32
+MINI_BATCH_SIZE = 1  # None if you don't want them
 
 #PATH TO SAVE OUTPUTS
 model_string = str(int(MEAN_FIELD)) + "_" + str(int(SYSTEMS_NUM)) + "_" + str(int(TIMESTEPS_NUM))+ "_" + str(int(LEN_TIME)) + "_" + str(int(LEN_SPACE)) + "_" + str(int(ITERS)) + '/'
@@ -136,18 +142,33 @@ opt_hypers = objax.optimizer.Adam(model.vars())
 energy = objax.GradValues(model.energy, model.vars())
 
 @objax.Function.with_vars(model.vars() + opt_hypers.vars())
-def train_op():
-    model.inference(lr=LR_NEWTON)  # perform inference and update variational params
+def train_op(batch_ind = None):
+    model.inference(lr=LR_NEWTON, batch_ind = batch_ind)  # perform inference and update variational params
     dE, E = energy()  # compute energy and its gradients w.r.t. hypers
     opt_hypers(LR_ADAM, dE)
     return E
 
 # train_op = objax.Jit(train_op)
 
+############# Define minibatches
+if MINI_BATCH_SIZE == None:
+    number_of_minibatches = 1
+    mini_batches_indices = [None] * number_of_minibatches
+else:
+    number_of_minibatches = int(len(t_train) / MINI_BATCH_SIZE)
+    idx_set = np.arange(len(t_train))
+    np.random.shuffle(idx_set)
+    mini_batches_indices = np.array_split(idx_set, number_of_minibatches)
+
+############# Begin training
+
 logging.info('Begin training')
 t0 = time.time()
 for i in range(1, ITERS + 1):
-    loss = train_op()
+    for mini_batch in range(number_of_minibatches):
+        if number_of_minibatches > 1:
+            print(f'Doing minibatch {mini_batch}')
+        loss = train_op(mini_batches_indices[mini_batch])
     print('iter %2d, energy: %1.4f' % (i, loss[0]))
 t1 = time.time()
 print('optimisation time: %2.2f secs' % (t1-t0))
@@ -158,7 +179,6 @@ logging.info('Save the model weights in a numpy zipped file')
 #CAN SAVE THE MODEL THIS WAY
 model_name = folder+'model.npz'
 objax.io.save_var_collection(model_name, model.vars())
-
 
 ######################### METRICS
 logging.info('Calculate predictive distributions, and NLPD')
@@ -234,14 +254,13 @@ video_name = folder+'video.mp4'
 images = sorted([img for img in os.listdir(image_folder) if img.endswith(".png")])
 frame = cv2.imread(os.path.join(image_folder, images[0]))
 height, width, layers = frame.shape
-video = cv2.VideoWriter(video_name, cv2.VideoWriter_fourcc(*'MP4V'), 1, (width,height))
+video = cv2.VideoWriter(video_name, cv2.VideoWriter_fourcc(*'MP4V'), FPS_VIDEO, (width,height))
 for image in images:
     video.write(cv2.imread(os.path.join(image_folder, image)))
 cv2.destroyAllWindows()
 video.release()
 #DELETE THE IMAGES FROM THE IMAGE FOLDER
 [os.remove(image_folder+'/'+img) for img in os.listdir(image_folder) if img.endswith(".png")]
-
 
 logging.info('Get the system specific predictions')
 #GET THE SYSTEM SPECIFIC PREDICTIONS (NOT THE TOTAL INTERPOLATION)

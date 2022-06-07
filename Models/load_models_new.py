@@ -43,6 +43,9 @@ OPT_Z = True  # will be set to False if SPARSE=SPARSE
 #use a mean field approximation?
 MEAN_FIELD = False
 
+#Number of FPS for the video of the time evolution of predictions
+FPS_VIDEO = 50
+
 #PATH TO SAVE OUTPUTS
 model_string = str(int(MEAN_FIELD)) + "_" + str(int(SYSTEMS_NUM)) + "_" + str(int(TIMESTEPS_NUM))+ "_" + str(int(LEN_TIME)) + "_" + str(int(LEN_SPACE)) + "_" + str(int(ITERS)) + '/'
 # model_string = 'Try_new_kernel_separate/'
@@ -212,7 +215,7 @@ video_name = folder+'/video.mp4'
 images = sorted([img for img in os.listdir(image_folder) if img.endswith(".png")])
 frame = cv2.imread(os.path.join(image_folder, images[0]))
 height, width, layers = frame.shape
-video = cv2.VideoWriter(video_name, cv2.VideoWriter_fourcc(*'MP4V'), 1, (width,height))
+video = cv2.VideoWriter(video_name, cv2.VideoWriter_fourcc(*'MP4V'), FPS_VIDEO, (width,height))
 for image in images:
     video.write(cv2.imread(os.path.join(image_folder, image)))
 cv2.destroyAllWindows()
