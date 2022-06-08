@@ -170,7 +170,7 @@ def optimise_GP(z, t, R_scaled, Y_scaled, Y_scaler, t_train, R_train_scaled, Y_t
             'len_time': (1, 24), 'len_space': (0.01, 1.5), 'cont_mean_field': (0, 1.99), 'cont_matern_order': (1, 3.99)},
         verbose = 2
         )
-    optimiser.maximize(n_iter = 10, init_points = 10)
+    optimiser.maximize(n_iter = 21, init_points = 3)
     print('final result',optimiser.max)
 
 if __name__ == "__main__":
@@ -179,8 +179,8 @@ if __name__ == "__main__":
     TIMESTEPS_NUM = 500  # 70571 is the max
     TRAIN_FRAC = 0.9
     SPARSE = True # Want to use a sparse approximation
-    MINI_BATCH_SIZE = 64  # None if you don't want them. Yann LeCun suggests <= 32
-    ITERS = 15
+    MINI_BATCH_SIZE = 16  # None if you don't want them. Yann LeCun suggests <= 32
+    ITERS = 5
 
     z, t, R_scaled, Y_scaled, Y_scaler, t_train, R_train_scaled, Y_train_scaled, test_mask = preprocessing(system_num=SYSTEMS_NUM,
                                                                                                  timesteps_num=TIMESTEPS_NUM,
