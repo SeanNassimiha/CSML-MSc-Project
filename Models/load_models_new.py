@@ -82,7 +82,7 @@ X = np.vstack([X[:, 0],
 t, R, Y = bayesnewton.utils.create_spatiotemporal_grid(X, Y)
 
 # train test split for 3 dimensional data
-t_train, t_test, R_train, R_test, Y_train, Y_test = mutils.train_split_3d(t, R, Y, train_frac=TRAIN_FRAC)
+t_train, t_test, R_train, R_test, Y_train, Y_test = mutils.train_split_3d(t, R, Y, train_frac=TRAIN_FRAC, split_by_day = True)
 
 # get the mask of the test points
 test_mask = np.in1d(t.squeeze(), t_test.squeeze())

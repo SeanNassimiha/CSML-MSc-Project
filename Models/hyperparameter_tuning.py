@@ -33,12 +33,14 @@ def preprocessing(system_num, timesteps_num, train_frac, sparse):
     logging.info('Importing the data')
     data =  pd.read_csv('../../Data/pv_power_df_5day.csv', index_col='datetime').drop(columns=['2657', '2828']) #DROPPING FAULTY SYSTEMS
     uk_pv = pd.read_csv('../../Data/system_metadata_location_rounded.csv')
-
+    uk_pv['ss_id_string'] = uk_pv['ss_id'].astype('str')
     ######################### DATASET CREATION
     logging.info('create the X,Y datasets')
     data_multiple = data.iloc[:, :system_num][:timesteps_num]
     lats = dict(uk_pv.set_index('ss_id')['latitude_rounded'])
     longs = dict(uk_pv.set_index('ss_id')['longitude_rounded'])
+    capacities = uk_pv[uk_pv.ss_id_string.isin(data_multiple.columns)].set_index('ss_id_string')['kwp'].values * 1000
+
     a = data_multiple.reset_index()
     stacked = mutils.stack_dataframe(a, lats, longs)
 
@@ -55,7 +57,7 @@ def preprocessing(system_num, timesteps_num, train_frac, sparse):
     t, R, Y = bayesnewton.utils.create_spatiotemporal_grid(X, Y)
 
     # train test split for 3 dimensional data
-    t_train, t_test, R_train, R_test, Y_train, Y_test = mutils.train_split_3d(t, R, Y, train_frac=train_frac)
+    t_train, t_test, R_train, R_test, Y_train, Y_test = mutils.train_split_3d(t, R, Y, train_frac=train_frac, split_by_day = True)
 
     # get the mask of the test points
     test_mask = np.in1d(t.squeeze(), t_test.squeeze())
@@ -72,10 +74,10 @@ def preprocessing(system_num, timesteps_num, train_frac, sparse):
     else:
         z = R[0, ...]
 
-    return z, t, R_scaled, Y_scaled,  Y_scaler, t_train, R_train_scaled, Y_train_scaled, test_mask
+    return z, t, R_scaled, Y_scaled,  Y_scaler, t_train, R_train_scaled, Y_train_scaled, test_mask, capacities
 
 
-def evaluate_test_mae(z, t, R_scaled, Y_scaler, t_train, R_train_scaled, Y_train_scaled, test_mask, iters, #this is data col
+def evaluate_test_mae(z, t, R_scaled, Y_scaler, t_train, R_train_scaled, Y_train_scaled, test_mask, capacities, iters, #this is data col
                 lr_adam, lr_newton, var_y, var_f, len_time, len_space, mean_field, matern_order): #this is params col
 
     ######################### KERNEL DEFINING
@@ -135,18 +137,18 @@ def evaluate_test_mae(z, t, R_scaled, Y_scaler, t_train, R_train_scaled, Y_train
     t1 = time.time()
     # print('optimisation time: %2.2f secs' % (t1 - t0))
 
-    Y = Y_scaler.inverse_transform(Y_scaled[:, :, 0])
+    Y = Y_scaler.inverse_transform(Y_scaled[:, :, 0]) * capacities
     # logging.info('Get the system specific predictions')
     # GET THE SYSTEM SPECIFIC PREDICTIONS (NOT THE TOTAL INTERPOLATION)
     posterior_mean_ts, posterior_var_ts = model.predict(X=t, R=R_scaled)
-    posterior_mean_rescaled = Y_scaler.inverse_transform(posterior_mean_ts)
+    posterior_mean_rescaled = Y_scaler.inverse_transform(posterior_mean_ts) * capacities
 
-    neg_mae_test = - np.nanmean(abs(np.squeeze(Y[test_mask]) - np.squeeze(posterior_mean_rescaled[test_mask])))
+    neg_mae_test = - np.nanmean(abs(np.squeeze(Y[test_mask] ) - np.squeeze(posterior_mean_rescaled[test_mask])))
     # print(f'The test MAE is {mae_test.round(3)}')
 
     return neg_mae_test
 
-def optimise_GP(z, t, R_scaled, Y_scaled, Y_scaler, t_train, R_train_scaled, Y_train_scaled, test_mask, iters):
+def optimise_GP(z, t, R_scaled, Y_scaled, Y_scaler, t_train, R_train_scaled, Y_train_scaled, test_mask, capacities,  iters):
     ''' Apply Bayesian Optimisation to GP hyperparameters'''
     def GP_evaluation(lr_adam, lr_newton, var_y, var_f, len_time, len_space, cont_mean_field, cont_matern_order):
         ''' Wrapper of evaluate_test_mae function'''
@@ -158,7 +160,7 @@ def optimise_GP(z, t, R_scaled, Y_scaled, Y_scaler, t_train, R_train_scaled, Y_t
         mean_field = mean_field_dict[int(cont_mean_field)]
         matern_order = matern_dict[int(cont_matern_order)]
 
-        return evaluate_test_mae(z, t, R_scaled, Y_scaler, t_train, R_train_scaled, Y_train_scaled, test_mask, iters, #this is data col
+        return evaluate_test_mae(z, t, R_scaled, Y_scaler, t_train, R_train_scaled, Y_train_scaled, test_mask, capacities, iters, #this is data col
                             lr_adam = lr_adam, lr_newton = lr_newton,
                             var_y = var_y, var_f = var_f,
                             len_time =  len_time, len_space = len_space,
@@ -175,16 +177,16 @@ def optimise_GP(z, t, R_scaled, Y_scaled, Y_scaler, t_train, R_train_scaled, Y_t
 
 if __name__ == "__main__":
 
-    SYSTEMS_NUM = 20  # 883 is the max
+    SYSTEMS_NUM = 15  # 883 is the max
     TIMESTEPS_NUM = 500  # 70571 is the max
     TRAIN_FRAC = 0.9
     SPARSE = True # Want to use a sparse approximation
     MINI_BATCH_SIZE = 16  # None if you don't want them. Yann LeCun suggests <= 32
     ITERS = 5
 
-    z, t, R_scaled, Y_scaled, Y_scaler, t_train, R_train_scaled, Y_train_scaled, test_mask = preprocessing(system_num=SYSTEMS_NUM,
+    z, t, R_scaled, Y_scaled, Y_scaler, t_train, R_train_scaled, Y_train_scaled, test_mask, capacities = preprocessing(system_num=SYSTEMS_NUM,
                                                                                                  timesteps_num=TIMESTEPS_NUM,
                                                                                                  train_frac=TRAIN_FRAC,
                                                                                                  sparse=SPARSE)
     print(Colours.yellow("--- Optimizing GP ---"))
-    optimise_GP(z, t, R_scaled, Y_scaled, Y_scaler, t_train, R_train_scaled, Y_train_scaled, test_mask, iters= ITERS)
+    optimise_GP(z, t, R_scaled, Y_scaled, Y_scaler, t_train, R_train_scaled, Y_train_scaled, test_mask, capacities, iters= ITERS)

@@ -46,6 +46,33 @@ def get_separate_kernel(variance, lengthscale_time, lengthscale_space, z, sparse
                                                     conditional=conditional)
     return kern
 
+def get_periodic_kernel(variance, lengthscale_time, lengthscale_space, z, sparse, opt_z, length_of_one_day, conditional='Full'):
+
+
+    # length_of_one_year = length_of_one_day * 365.25
+    kern_time = bayesnewton.kernels.QuasiPeriodicMatern32(variance=variance,
+                                                        lengthscale_periodic = lengthscale_time,
+                                                        period = length_of_one_day,
+                                                        lengthscale_matern= lengthscale_time)
+    # kern_time_year = bayesnewton.kernels.QuasiPeriodicMatern32(variance=variance,
+    #                                                     lengthscale_periodic = lengthscale_time * 100,
+    #                                                     period = length_of_one_year,
+    #                                                     lengthscale_matern= lengthscale_time * 100)
+
+    # kern_time = bayesnewton.kernels.Separable([kern_time_day, kern_time_year])
+
+    kern_space0 = bayesnewton.kernels.Matern32(variance=variance, lengthscale=lengthscale_space)
+    kern_space1 = bayesnewton.kernels.Matern32(variance=variance, lengthscale=lengthscale_space)
+    kern_space = bayesnewton.kernels.Separable([kern_space0, kern_space1])
+
+    kern = bayesnewton.kernels.SpatioTemporalKernel(temporal_kernel=kern_time,
+                                                    spatial_kernel=kern_space,
+                                                    z=z,
+                                                    sparse=sparse,
+                                                    opt_z=opt_z,
+                                                    conditional=conditional)
+    return kern
+
 # kern_time_day = bayesnewton.kernels.QuasiPeriodicMatern32(variance=VAR_F,
 #                                                     lengthscale_periodic=(length_of_one_day*5),
 #                                                     period=length_of_one_day,

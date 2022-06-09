@@ -19,21 +19,21 @@ logging.basicConfig(format='%(asctime)s %(message)s', level = logging.INFO)
 ######################### GLOBAL VARIABLES
 
 #DATA VARIABLES
-SYSTEMS_NUM = 50 # 883 is the max
-TIMESTEPS_NUM = 5000 # 70571 is the max
+SYSTEMS_NUM = 3 # 883 is the max
+TIMESTEPS_NUM = 3000 # 70571 is the max
 TRAIN_FRAC = 0.9
 GRID_PIXELS = 20
 
 #OPTIMISATION VARIABLES
 LR_ADAM = 0.05
 LR_NEWTON = 0.5
-ITERS = 15
+ITERS = 10
 
 #GP Variables
 VAR_Y = 0.5
 VAR_F = 0.5
-LEN_TIME = 6 #6 would mean 30 mins
-LEN_SPACE = 0.1
+LEN_TIME = 20 #6 would mean 30 mins
+LEN_SPACE = 1
 
 #Want to use a sparse approximation
 SPARSE = True
@@ -47,27 +47,30 @@ MEAN_FIELD = False
 FPS_VIDEO = 50
 
 #Select the size of minibatches. Yann LeCun suggests <= 32
-MINI_BATCH_SIZE = 1  # None if you don't want them
+MINI_BATCH_SIZE = None  # None if you don't want them
 
 #PATH TO SAVE OUTPUTS
-model_string = str(int(MEAN_FIELD)) + "_" + str(int(SYSTEMS_NUM)) + "_" + str(int(TIMESTEPS_NUM))+ "_" + str(int(LEN_TIME)) + "_" + str(int(LEN_SPACE)) + "_" + str(int(ITERS)) + '/'
-# model_string = 'Try_new_kernel_separate/'
+# model_string = str(int(MEAN_FIELD)) + "_" + str(int(SYSTEMS_NUM)) + "_" + str(int(TIMESTEPS_NUM))+ "_" + str(int(LEN_TIME)) + "_" + str(int(LEN_SPACE)) + "_" + str(int(ITERS)) + '/'
+model_string = 'Try_periodic_kernel/'
 folder = 'output/'+model_string
 try:
     os.mkdir(folder)
 except:
-    raise Exception("The selected folder has been already used")
+    folder = 'output/'+'New_'+model_string
+    os.mkdir(folder)
 
 ######################### IMPORTS
 logging.info('Importing the data')
 data =  pd.read_csv('../../Data/pv_power_df_5day.csv', index_col='datetime').drop(columns=['2657', '2828']) #DROPPING FAULTY SYSTEMS
 uk_pv = pd.read_csv('../../Data/system_metadata_location_rounded.csv')
+uk_pv['ss_id_string'] = uk_pv['ss_id'].astype('str')
 
 ######################### DATASET CREATION
 logging.info('create the X,Y datasets')
 data_multiple = data.iloc[:, :SYSTEMS_NUM][:TIMESTEPS_NUM]
 lats = dict(uk_pv.set_index('ss_id')['latitude_rounded'])
 longs = dict(uk_pv.set_index('ss_id')['longitude_rounded'])
+capacities = uk_pv[uk_pv.ss_id_string.isin(data_multiple.columns)].set_index('ss_id_string')['kwp'].values * 1000
 a = data_multiple.reset_index()
 stacked = mutils.stack_dataframe(a, lats, longs)
 
@@ -84,7 +87,7 @@ X = np.vstack([X[:, 0],
 t, R, Y = bayesnewton.utils.create_spatiotemporal_grid(X, Y)
 
 # train test split for 3 dimensional data
-t_train, t_test, R_train, R_test, Y_train, Y_test = mutils.train_split_3d(t, R, Y, train_frac=TRAIN_FRAC)
+t_train, t_test, R_train, R_test, Y_train, Y_test = mutils.train_split_3d(t, R, Y, train_frac=TRAIN_FRAC, split_by_day = True)
 
 # get the mask of the test points
 test_mask = np.in1d(t.squeeze(), t_test.squeeze())
@@ -113,14 +116,14 @@ total_length = (t[-1] - t[0]).item()
 length_of_one_day = total_length / number_of_days
 length_of_one_year = length_of_one_day * 365.25
 
-kern = kerns.get_SpatioTemporal_combined(variance=VAR_F,
-                                           lengthscale_time=LEN_TIME,
-                                           lengthscale_space=[LEN_SPACE, LEN_SPACE],
-                                           z=z,
-                                           sparse=SPARSE,
-                                           opt_z=OPT_Z,
-                                           matern_order = '32',
-                                           conditional='Full')
+# kern = kerns.get_SpatioTemporal_combined(variance=VAR_F,
+#                                            lengthscale_time=LEN_TIME,
+#                                            lengthscale_space=[LEN_SPACE, LEN_SPACE],
+#                                            z=z,
+#                                            sparse=SPARSE,
+#                                            opt_z=OPT_Z,
+#                                            matern_order = '32',
+#                                            conditional='Full')
 # kern = kerns.get_separate_kernel(variance=VAR_F,
 #                                            lengthscale_time=LEN_TIME,
 #                                            lengthscale_space=LEN_SPACE,
@@ -129,8 +132,17 @@ kern = kerns.get_SpatioTemporal_combined(variance=VAR_F,
 #                                            opt_z=OPT_Z,
 #                                            conditional='Full')
 
+kern = kerns.get_periodic_kernel(variance=VAR_F,
+                                           lengthscale_time=LEN_TIME,
+                                           lengthscale_space=LEN_SPACE,
+                                           z=z,
+                                           sparse=SPARSE,
+                                           opt_z=OPT_Z,
+                                           length_of_one_day = length_of_one_day,
+                                           conditional='DTC')
+
 ######################### MODEL TRAINING
-logging.info('Define likelihood, model, target function and parameters')
+logging.info('Define likelilikelihood, model, target function and parameters')
 lik = bayesnewton.likelihoods.Gaussian(variance=VAR_Y)
 
 if MEAN_FIELD:
@@ -269,14 +281,17 @@ posterior_mean_rescaled = Y_scaler.inverse_transform(posterior_mean_ts)
 posterior_pos_twostd_rescaled = Y_scaler.inverse_transform(posterior_mean_ts + 1.96 * np.sqrt(posterior_var_ts))
 posterior_neg_twostd_rescaled = Y_scaler.inverse_transform(posterior_mean_ts - 1.96 * np.sqrt(posterior_var_ts))
 
+rescaled_Y = (Y * capacities)
+doubly_rescaled_posterior = posterior_mean_rescaled * capacities
+
 #adjust this for the correct quantities
-rmse = np.sqrt(np.nanmean((np.squeeze(Y) - np.squeeze(posterior_mean_rescaled))**2))
+rmse = np.sqrt(np.nanmean((np.squeeze(rescaled_Y) - np.squeeze(doubly_rescaled_posterior))**2))
 print(f'The RMSE is {rmse.round(3)}')
 
-rmse_train = np.sqrt(np.nanmean((np.squeeze(Y[~test_mask]) - np.squeeze(posterior_mean_rescaled[~test_mask]))**2))
+rmse_train = np.sqrt(np.nanmean((np.squeeze(rescaled_Y[~test_mask]) - np.squeeze(doubly_rescaled_posterior[~test_mask]))**2))
 print(f'The train RMSE is {rmse_train.round(3)}')
 
-rmse_test = np.sqrt(np.nanmean((np.squeeze(Y[test_mask]) - np.squeeze(posterior_mean_rescaled[test_mask]))**2))
+rmse_test = np.sqrt(np.nanmean((np.squeeze(rescaled_Y[test_mask]) - np.squeeze(doubly_rescaled_posterior[test_mask]))**2))
 print(f'The test RMSE is {rmse_test.round(3)}')
 
 
