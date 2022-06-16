@@ -50,22 +50,26 @@ def get_periodic_kernel(variance, lengthscale_time, lengthscale_space, z, sparse
 
 
     # length_of_one_year = length_of_one_day * 365.25
-    kern_time = bayesnewton.kernels.QuasiPeriodicMatern32(variance=variance,
-                                                        lengthscale_periodic = lengthscale_time,
-                                                        period = length_of_one_day,
-                                                        lengthscale_matern= lengthscale_time)
+    # kern_time_day = bayesnewton.kernels.QuasiPeriodicMatern32(variance=variance,
+    #                                                     lengthscale_periodic = lengthscale_time,
+    #                                                     period = 97,
+    #                                                     lengthscale_matern= 20*lengthscale_time)
+
+    kern_time_year = bayesnewton.kernels.Periodic(variance=variance,
+                                                 lengthscale=lengthscale_time * 100,
+                                                               period=97*365.25)
     # kern_time_year = bayesnewton.kernels.QuasiPeriodicMatern32(variance=variance,
     #                                                     lengthscale_periodic = lengthscale_time * 100,
     #                                                     period = length_of_one_year,
     #                                                     lengthscale_matern= lengthscale_time * 100)
 
-    # kern_time = bayesnewton.kernels.Separable([kern_time_day, kern_time_year])
+    # kern_time = bayesnewton.kernels.Sum([kern_time_day, kern_time_year])
 
     kern_space0 = bayesnewton.kernels.Matern32(variance=variance, lengthscale=lengthscale_space)
     kern_space1 = bayesnewton.kernels.Matern32(variance=variance, lengthscale=lengthscale_space)
     kern_space = bayesnewton.kernels.Separable([kern_space0, kern_space1])
 
-    kern = bayesnewton.kernels.SpatioTemporalKernel(temporal_kernel=kern_time,
+    kern = bayesnewton.kernels.SpatioTemporalKernel(temporal_kernel=kern_time_year,
                                                     spatial_kernel=kern_space,
                                                     z=z,
                                                     sparse=sparse,

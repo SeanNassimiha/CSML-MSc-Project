@@ -19,45 +19,47 @@ logging.basicConfig(format='%(asctime)s %(message)s', level = logging.INFO)
 ######################### GLOBAL VARIABLES
 
 #DATA VARIABLES
-SYSTEMS_NUM = 3 # 883 is the max
-TIMESTEPS_NUM = 3000 # 70571 is the max
+SYSTEMS_NUM = 15 #len(data.columns)
+TIMESTEPS_NUM = 227 #len(data.index)
 TRAIN_FRAC = 0.9
-GRID_PIXELS = 20
+GRID_PIXELS = 5
 
 #OPTIMISATION VARIABLES
 LR_ADAM = 0.05
 LR_NEWTON = 0.5
-ITERS = 10
+ITERS = 5
 
 #GP Variables
-VAR_Y = 0.5
-VAR_F = 0.5
-LEN_TIME = 20 #6 would mean 30 mins
-LEN_SPACE = 1
+VAR_Y = 1.
+VAR_F = 1.
+LEN_TIME = 20  # step size = 1 (hour)
+LEN_SPACE = 1.5
 
 #Want to use a sparse approximation
 SPARSE = True
 #Should we optimise the inducing points
-OPT_Z = True  # will be set to False if SPARSE=SPARSE
+OPT_Z = False  # will be set to False if SPARSE=False
 
 #use a mean field approximation?
 MEAN_FIELD = False
+MINI_BATCH_SIZE = None #none if you don't want them
+SPLIT_BY_DAY = False
+TEST_BATCHES = True
 
 #Number of FPS for the video of the time evolution of predictions
 FPS_VIDEO = 50
+VIDEO_LIMIT = 1000
 
-#Select the size of minibatches. Yann LeCun suggests <= 32
-MINI_BATCH_SIZE = None  # None if you don't want them
 
 #PATH TO SAVE OUTPUTS
 # model_string = str(int(MEAN_FIELD)) + "_" + str(int(SYSTEMS_NUM)) + "_" + str(int(TIMESTEPS_NUM))+ "_" + str(int(LEN_TIME)) + "_" + str(int(LEN_SPACE)) + "_" + str(int(ITERS)) + '/'
-model_string = 'Try_periodic_kernel/'
+model_string = 'Periodic_kernel_13_06/'
 folder = 'output/'+model_string
-try:
-    os.mkdir(folder)
-except:
-    folder = 'output/'+'New_'+model_string
-    os.mkdir(folder)
+# try:
+    # os.mkdir(folder)
+# except:
+#     folder = 'output/'+'New_'+model_string
+    # os.mkdir(folder)
 
 ######################### IMPORTS
 logging.info('Importing the data')
@@ -87,7 +89,7 @@ X = np.vstack([X[:, 0],
 t, R, Y = bayesnewton.utils.create_spatiotemporal_grid(X, Y)
 
 # train test split for 3 dimensional data
-t_train, t_test, R_train, R_test, Y_train, Y_test = mutils.train_split_3d(t, R, Y, train_frac=TRAIN_FRAC, split_by_day = True)
+t_train, t_test, R_train, R_test, Y_train, Y_test = mutils.train_split_3d(t, R, Y, train_frac=TRAIN_FRAC, split_by_day = SPLIT_BY_DAY)
 
 # get the mask of the test points
 test_mask = np.in1d(t.squeeze(), t_test.squeeze())
@@ -103,7 +105,9 @@ R_scaled_frozen = R_scaled[0]
 r1, r2, Rplot = mutils.create_grid_from_coords(R=R_scaled_frozen, t=t, R_scaler=R_scaler, N_pixels=GRID_PIXELS)
 
 if SPARSE:
-    z = mutils.create_ind_point_grid(R_scaled_frozen, n_points=None)
+    # z = mutils.create_ind_point_grid(R_scaled_frozen, n_points=None)
+    z = R_scaled[0, ...]
+    z = z[:11] #this is just for debugging
 else:
     z = R[0, ...]
 
@@ -116,14 +120,15 @@ total_length = (t[-1] - t[0]).item()
 length_of_one_day = total_length / number_of_days
 length_of_one_year = length_of_one_day * 365.25
 
-# kern = kerns.get_SpatioTemporal_combined(variance=VAR_F,
-#                                            lengthscale_time=LEN_TIME,
-#                                            lengthscale_space=[LEN_SPACE, LEN_SPACE],
-#                                            z=z,
-#                                            sparse=SPARSE,
-#                                            opt_z=OPT_Z,
-#                                            matern_order = '32',
-#                                            conditional='Full')
+kern = kerns.get_SpatioTemporal_combined(variance=VAR_F,
+                                           lengthscale_time=LEN_TIME,
+                                           lengthscale_space=[LEN_SPACE, LEN_SPACE],
+                                           z=z,
+                                           sparse=SPARSE,
+                                           opt_z=OPT_Z,
+                                           matern_order = '32',
+                                           conditional='Full')
+
 # kern = kerns.get_separate_kernel(variance=VAR_F,
 #                                            lengthscale_time=LEN_TIME,
 #                                            lengthscale_space=LEN_SPACE,
@@ -132,23 +137,31 @@ length_of_one_year = length_of_one_day * 365.25
 #                                            opt_z=OPT_Z,
 #                                            conditional='Full')
 
-kern = kerns.get_periodic_kernel(variance=VAR_F,
-                                           lengthscale_time=LEN_TIME,
-                                           lengthscale_space=LEN_SPACE,
-                                           z=z,
-                                           sparse=SPARSE,
-                                           opt_z=OPT_Z,
-                                           length_of_one_day = length_of_one_day,
-                                           conditional='DTC')
+# kern = kerns.get_periodic_kernel(variance=VAR_F,
+#                                            lengthscale_time=LEN_TIME,
+#                                            lengthscale_space=LEN_SPACE,
+#                                            z=z,
+#                                            sparse=SPARSE,
+#                                            opt_z=OPT_Z,
+#                                            length_of_one_day = length_of_one_day,
+#                                            conditional='DTC')
 
 ######################### MODEL TRAINING
 logging.info('Define likelilikelihood, model, target function and parameters')
 lik = bayesnewton.likelihoods.Gaussian(variance=VAR_Y)
-
+R_total_train = np.concatenate((R_train_scaled, Rplot[:R_train_scaled.shape[0]]), axis=1)
 if MEAN_FIELD:
-    model = bayesnewton.models.MarkovVariationalMeanFieldGP(kernel=kern, likelihood=lik, X=t_train, R=R_train_scaled, Y=Y_train_scaled, parallel = True)
+    # model = bayesnewton.models.MarkovVariationalMeanFieldGP(kernel=kern, likelihood=lik, X=t_train, R=R_train_scaled, Y=Y_train_scaled, parallel = True)
+    inf = bayesnewton.inference.Taylor
+    mod = bayesnewton.basemodels.MarkovMeanFieldGP
+    Mod = bayesnewton.build_model(mod, inf)
+    model = Mod(kernel=kern, likelihood=lik, X=t_train, Y=Y_train_scaled, R=R_train_scaled)
 else:
-    model = bayesnewton.models.MarkovVariationalGP(kernel=kern, likelihood=lik, X=t_train, R=R_train_scaled, Y=Y_train_scaled, parallel = True)
+    # model = bayesnewton.models.MarkovGaussianProcess(kernel=kern, likelihood=lik, X=t_train, R=R_train_scaled, Y=Y_train_scaled, parallel = True)
+    inf = bayesnewton.inference.Taylor
+    mod = bayesnewton.basemodels.MarkovGP
+    Mod = bayesnewton.build_model(mod, inf)
+    model = Mod(kernel=kern, likelihood=lik, X=t_train, Y=Y_train_scaled, R=R_total_train)
 
 opt_hypers = objax.optimizer.Adam(model.vars())
 energy = objax.GradValues(model.energy, model.vars())
@@ -173,18 +186,22 @@ else:
     mini_batches_indices = np.array_split(idx_set, number_of_minibatches)
 
 ############# Begin training
+try:
+    logging.info('Begin training')
+    t0 = time.time()
+    for i in range(1, ITERS + 1):
+        for mini_batch in range(number_of_minibatches):
+            if number_of_minibatches > 1:
+                print(f'Doing minibatch {mini_batch}')
+            loss = train_op(mini_batches_indices[mini_batch])
+        print('iter %2d, energy: %1.4f' % (i, loss[0]))
+    t1 = time.time()
+    print('optimisation time: %2.2f secs' % (t1-t0))
+    avg_time_taken = (t1-t0)/ITERS
+except:
+    # os.rmdir(folder)
+    raise Exception("Training Failed!")
 
-logging.info('Begin training')
-t0 = time.time()
-for i in range(1, ITERS + 1):
-    for mini_batch in range(number_of_minibatches):
-        if number_of_minibatches > 1:
-            print(f'Doing minibatch {mini_batch}')
-        loss = train_op(mini_batches_indices[mini_batch])
-    print('iter %2d, energy: %1.4f' % (i, loss[0]))
-t1 = time.time()
-print('optimisation time: %2.2f secs' % (t1-t0))
-avg_time_taken = (t1-t0)/ITERS
 
 #################### SAVE MODEL
 logging.info('Save the model weights in a numpy zipped file')
@@ -195,11 +212,31 @@ objax.io.save_var_collection(model_name, model.vars())
 ######################### METRICS
 logging.info('Calculate predictive distributions, and NLPD')
 # calculate posterior predictive distribution via filtering and smoothing at train & test locations:
-t0 = time.time()
-print('calculating the posterior predictive distribution ...')
-posterior_mean, posterior_var = model.predict(X=t, R=Rplot)
-t1 = time.time()
-print('prediction time: %2.2f secs' % (t1-t0))
+if TEST_BATCHES is True:
+    n_batches = int(Rplot.shape[1] / 20) + 1
+    test_split = np.array_split(Rplot, n_batches, axis=1)
+
+    # calculate posterior predictive distribution via filtering and smoothing at train & test locations:
+    print('calculating the posterior predictive distribution ...')
+
+    posterior_mean = np.zeros((TIMESTEPS_NUM, 1))
+    posterior_variance = np.zeros((TIMESTEPS_NUM, 1))
+
+    t0 = time.time()
+    for mini_batch in range(n_batches):
+        post_mean, post_var = model.predict(X=t, R=test_split[mini_batch])
+        posterior_mean = np.append(posterior_mean, post_mean, axis=1)
+        posterior_variance = np.append(posterior_variance, post_var, axis=1)
+    posterior_mean = posterior_mean[:, 1:]
+    posterior_variance = posterior_variance[:, 1:]
+    t1 = time.time()
+    print('prediction time: %2.2f secs' % (t1 - t0))
+else:
+    t0 = time.time()
+    print('calculating the posterior predictive distribution ...')
+    posterior_mean, posterior_var = model.predict(X=t, R=Rplot)
+    t1 = time.time()
+    print('prediction time: %2.2f secs' % (t1-t0))
 
 t2 = time.time()
 print('calculating the negative log predictive density ...')
@@ -230,7 +267,7 @@ vmax = np.nanpercentile(Y, 99)
 dates = pd.to_datetime(a.datetime).dt.date
 days_index = max(97, int(((len(t) / 5) // 97) * 97)) #number of time intervals to match 5 beginnings of days
 
-for time_step in range(t.shape[0]):
+for time_step in range(t.shape[0])[:VIDEO_LIMIT]:
     f, (a0, a1) = plt.subplots(2, 1, gridspec_kw={'height_ratios': [20, 1]})
     f.set_figheight(8)
     # f.set_figwidth(8)

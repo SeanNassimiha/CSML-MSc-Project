@@ -1,6 +1,13 @@
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
+from convertbng.util import convert_bng, convert_lonlat
+import geopandas
+
+def get_UK_polygon():
+    world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
+    uk_polygon = world[world.name == 'United Kingdom']
+    return uk_polygon
 
 def datetime_to_epoch(datetime):
     """
@@ -11,13 +18,14 @@ def datetime_to_epoch(datetime):
     return datetime.astype('int64') // 1e9
 
 
-def create_grid_from_coords(R, t, R_scaler, N_pixels=20):
+def create_grid_from_coords(R, t, R_scaler, N_pixels=20, constrained = True):
     '''
     Function tha creates a grid from the coordinates of the systems
     R - numpy array of the system coordinates, dimensions = [N_systems, 2] where 2 corresponds to lat,lon
     t - time vector
     R_scaler - used to define the minimum value that it can take on the grid
     N_pixels - number of pixels per dimension of the 2d grid
+    constrained - if True, output an Rplot with Nans for the pints outside the UK
     '''
     min_value_1 = R_scaler.transform([[0, 0]])[0,0] #this is the minimum value in the transformed space that this axis
     min_value_2 = R_scaler.transform([[0, 0]])[0,1] #this is the minimum value in the transformed space that this axis
@@ -28,7 +36,31 @@ def create_grid_from_coords(R, t, R_scaler, N_pixels=20):
     r2 = np.linspace(max(min(R[:, 1]) - 0.05 * X2range, min_value_2), max(R[:, 1]) + 0.05 * X2range, num=N_pixels)
     rA, rB = np.meshgrid(r1, r2)
     r = np.hstack((rA.reshape(-1, 1), rB.reshape(-1, 1)))  # Flattening grid for use in kernel functions
-    Rplot = np.tile(r, [t.shape[0], 1, 1])
+    if constrained:
+        #get the dataframe with the coordinates of the r
+        shapely_coord = R_scaler.inverse_transform(r)
+        longitude_shapely, latitude_shapely = convert_lonlat(shapely_coord[:, 0], shapely_coord[:, 1])
+        locs = pd.DataFrame([longitude_shapely, latitude_shapely], index=['Longitud', 'Latitud']).T
+
+        uk_polygon = get_UK_polygon()
+
+        # find valid points by doing an sjoin
+        valid = geopandas.sjoin(geopandas.GeoDataFrame(locs,
+                                                       geometry=geopandas.points_from_xy(locs["Longitud"],
+                                                                                         locs["Latitud"]),
+                                                       crs="epsg:4326"),
+                                uk_polygon.loc[:, ["geometry"]], how="left").assign(
+            valid=lambda d: (~d["index_right"].isna()).astype(int))
+        #substitue invalid points with nans
+        valid.loc[valid.valid == 0, ['Longitud', 'Latitud']] = np.nan, np.nan
+
+        constrained_r = valid[['Longitud', 'Latitud']].values
+        bng_constrained = convert_bng(constrained_r[:, 0], constrained_r[:, 1])
+        scaled_constrained = R_scaler.transform(np.array(bng_constrained).T)
+        Rplot = np.tile(scaled_constrained, [t.shape[0], 1, 1])
+
+    else:
+        Rplot = np.tile(r, [t.shape[0], 1, 1])
 
     return r1, r2, Rplot
 
