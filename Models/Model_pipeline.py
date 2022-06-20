@@ -70,8 +70,8 @@ uk_pv['ss_id_string'] = uk_pv['ss_id'].astype('str')
 ######################### DATASET CREATION
 logging.info('create the X,Y datasets')
 data_multiple = data.iloc[:, :SYSTEMS_NUM][:TIMESTEPS_NUM]
-lats = dict(uk_pv.set_index('ss_id')['latitude_rounded'])
-longs = dict(uk_pv.set_index('ss_id')['longitude_rounded'])
+lats = dict(uk_pv.set_index('ss_id')['latitude_noisy'])
+longs = dict(uk_pv.set_index('ss_id')['longitude_noisy'])
 capacities = uk_pv[uk_pv.ss_id_string.isin(data_multiple.columns)].set_index('ss_id_string')['kwp'].values * 1000
 a = data_multiple.reset_index()
 stacked = mutils.stack_dataframe(a, lats, longs)
@@ -148,7 +148,7 @@ kern = kerns.get_SpatioTemporal_combined(variance=VAR_F,
 
 ######################### MODEL TRAINING
 logging.info('Define likelilikelihood, model, target function and parameters')
-lik = bayesnewton.likelihoods.Gaussian(variance=VAR_Y)
+# lik = bayesnewton.likelihoods.Gaussian(variance=VAR_Y)
 R_total_train = np.concatenate((R_train_scaled, Rplot[:R_train_scaled.shape[0]]), axis=1)
 if MEAN_FIELD:
     # model = bayesnewton.models.MarkovVariationalMeanFieldGP(kernel=kern, likelihood=lik, X=t_train, R=R_train_scaled, Y=Y_train_scaled, parallel = True)
@@ -158,10 +158,13 @@ if MEAN_FIELD:
     model = Mod(kernel=kern, likelihood=lik, X=t_train, Y=Y_train_scaled, R=R_train_scaled)
 else:
     # model = bayesnewton.models.MarkovGaussianProcess(kernel=kern, likelihood=lik, X=t_train, R=R_train_scaled, Y=Y_train_scaled, parallel = True)
-    inf = bayesnewton.inference.Taylor
-    mod = bayesnewton.basemodels.MarkovGP
-    Mod = bayesnewton.build_model(mod, inf)
-    model = Mod(kernel=kern, likelihood=lik, X=t_train, Y=Y_train_scaled, R=R_total_train)
+    # inf = bayesnewton.inference.Taylor
+    # mod = bayesnewton.basemodels.MarkovGP
+    # Mod = bayesnewton.build_model(mod, inf)
+    # model = Mod(kernel=kern, likelihood=lik, X=t_train, Y=Y_train_scaled, R=R_total_train)
+
+    lik = bayesnewton.likelihoods.Beta(scale=30, fix_scale=False, link='probit')
+    model = bayesnewton.models.MarkovVariationalGP(kernel=kern, likelihood=lik, X=t_train, Y=Y_train, R=R_train_scaled)
 
 opt_hypers = objax.optimizer.Adam(model.vars())
 energy = objax.GradValues(model.energy, model.vars())

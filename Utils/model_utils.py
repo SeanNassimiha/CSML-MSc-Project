@@ -138,8 +138,11 @@ def train_split_3d(t, R, Y,  train_frac = 0.9, split_by_day = True):
     t_train = t[train_ix]
     t_test = np.delete(t, train_ix, axis=0)
 
-    R_train = R[train_ix]
-    R_test = np.delete(R, train_ix, axis=0)
+    if R is None:
+        R_train, R_test = None, None
+    else:
+        R_train = R[train_ix]
+        R_test = np.delete(R, train_ix, axis=0)
 
     Y_train = Y[train_ix]
     Y_test = np.delete(Y, train_ix, axis=0)
@@ -152,6 +155,7 @@ def scale_2d_train_test_data(R, Y, R_train, R_test, Y_train, Y_test ):
     Get the space data and labels, and scales them according to the train set only. Then performs the transformation
     on the test set and the total set as well, and returns all scaled dataframes as well as the scaler functions
     :param R:
+    :param Y:
     :param Y:
     :param R_train:
     :param R_test:
