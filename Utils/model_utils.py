@@ -105,19 +105,20 @@ def stack_dataframe(pve_df, lats_map, longs_map):
 
     return stacked
 
-def train_split_3d(t, R, Y,  train_frac = 0.9, split_by_day = True):
+def train_split_3d(t, R, Y,  train_frac = 0.9, split_type = 'Day'):
     '''
     Function that splits the space, time, label data in tran and test sets
     :param t: time data
     :param R: space data
     :param Y: labels
     :param train_frac: training set fraction to keep
-    :param split_by_day: bool, if True, hold out full days of data ratehr than individual timestamps
+    :param split_type: 'Day', 'Stamp', 'Cutoff'. Either removes random days, or it removes random timestamps,
+                        or it makes a cutoff at some point depending on the fraction'.
     :return: train-test splits
     '''
 
     # Train and Test split
-    if split_by_day is True:
+    if split_type == 'Day':
         #First find how many full days are there (so excluding the last partial day). The find how many test days.
         #ig we get 90% train-test split with, say, 2 full days, we will approximate the number of test days up, to 1.
         n_full_days = int(t.shape[0] / 97)
@@ -132,8 +133,13 @@ def train_split_3d(t, R, Y,  train_frac = 0.9, split_by_day = True):
         test_ix = np.array(test_ix).flatten()
         train_ix = np.setdiff1d(np.arange(t.shape[0]), test_ix)
 
-    else:
+    elif split_type == 'Stamp':
         train_ix = np.sort(np.random.choice(t.shape[0], int(train_frac * len(t)), replace=False))
+
+    elif split_type == 'Cutoff':
+        train_ix = np.arange(int(train_frac * len(t)))
+    else:
+        raise NotImplementedError
 
     t_train = t[train_ix]
     t_test = np.delete(t, train_ix, axis=0)

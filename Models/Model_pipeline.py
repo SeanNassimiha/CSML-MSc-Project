@@ -325,15 +325,14 @@ rescaled_Y = (Y * capacities)
 doubly_rescaled_posterior = posterior_mean_rescaled * capacities
 
 #adjust this for the correct quantities
-rmse = np.sqrt(np.nanmean((np.squeeze(rescaled_Y) - np.squeeze(doubly_rescaled_posterior))**2))
-print(f'The RMSE is {rmse.round(3)}')
+mae = np.nanmean(abs(np.squeeze(rescaled_Y) - np.squeeze(rescaled_posterior)))
+print(f'The MAE is {mae.round(3)}')
 
-rmse_train = np.sqrt(np.nanmean((np.squeeze(rescaled_Y[~test_mask]) - np.squeeze(doubly_rescaled_posterior[~test_mask]))**2))
-print(f'The train RMSE is {rmse_train.round(3)}')
+mae_train = np.nanmean(abs(np.squeeze(rescaled_Y[~test_mask]) - np.squeeze(rescaled_posterior[~test_mask])))
+print(f'The train MAE is {mae_train.round(3)}')
 
-rmse_test = np.sqrt(np.nanmean((np.squeeze(rescaled_Y[test_mask]) - np.squeeze(doubly_rescaled_posterior[test_mask]))**2))
-print(f'The test RMSE is {rmse_test.round(3)}')
-
+mae_test = np.nanmean(abs(np.squeeze(rescaled_Y[test_mask]) - np.squeeze(rescaled_posterior[test_mask])))
+print(f'The test MAE is {mae_test.round(3)}')
 
 logging.info('Plot the time series individually')
 fig, axs = plt.subplots(math.ceil(SYSTEMS_NUM / 6), 6, figsize=(15, 40))
