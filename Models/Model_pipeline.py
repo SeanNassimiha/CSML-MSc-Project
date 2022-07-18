@@ -53,7 +53,7 @@ VIDEO_LIMIT = 1000
 
 #PATH TO SAVE OUTPUTS
 # model_string = str(int(MEAN_FIELD)) + "_" + str(int(SYSTEMS_NUM)) + "_" + str(int(TIMESTEPS_NUM))+ "_" + str(int(LEN_TIME)) + "_" + str(int(LEN_SPACE)) + "_" + str(int(ITERS)) + '/'
-model_string = 'Periodic_kernel_13_06/'
+model_string = 'ATTEMPT/'
 folder = 'output/'+model_string
 # try:
     # os.mkdir(folder)
@@ -89,7 +89,7 @@ X = np.vstack([X[:, 0],
 t, R, Y = bayesnewton.utils.create_spatiotemporal_grid(X, Y)
 
 # train test split for 3 dimensional data
-t_train, t_test, R_train, R_test, Y_train, Y_test = mutils.train_split_3d(t, R, Y, train_frac=TRAIN_FRAC, split_by_day = SPLIT_BY_DAY)
+t_train, t_test, R_train, R_test, Y_train, Y_test = mutils.train_split_3d(t, R, Y, train_frac=TRAIN_FRAC, split_type = 'Cutoff')
 
 # get the mask of the test points
 test_mask = np.in1d(t.squeeze(), t_test.squeeze())
@@ -120,14 +120,14 @@ total_length = (t[-1] - t[0]).item()
 length_of_one_day = total_length / number_of_days
 length_of_one_year = length_of_one_day * 365.25
 
-kern = kerns.get_SpatioTemporal_combined(variance=VAR_F,
-                                           lengthscale_time=LEN_TIME,
-                                           lengthscale_space=[LEN_SPACE, LEN_SPACE],
-                                           z=z,
-                                           sparse=SPARSE,
-                                           opt_z=OPT_Z,
-                                           matern_order = '32',
-                                           conditional='Full')
+# kern = kerns.get_SpatioTemporal_combined(variance=VAR_F,
+#                                            lengthscale_time=LEN_TIME,
+#                                            lengthscale_space=[LEN_SPACE, LEN_SPACE],
+#                                            z=z,
+#                                            sparse=SPARSE,
+#                                            opt_z=OPT_Z,
+#                                            matern_order = '32',
+#                                            conditional='Full')
 
 # kern = kerns.get_separate_kernel(variance=VAR_F,
 #                                            lengthscale_time=LEN_TIME,
@@ -137,14 +137,13 @@ kern = kerns.get_SpatioTemporal_combined(variance=VAR_F,
 #                                            opt_z=OPT_Z,
 #                                            conditional='Full')
 
-# kern = kerns.get_periodic_kernel(variance=VAR_F,
-#                                            lengthscale_time=LEN_TIME,
-#                                            lengthscale_space=LEN_SPACE,
-#                                            z=z,
-#                                            sparse=SPARSE,
-#                                            opt_z=OPT_Z,
-#                                            length_of_one_day = length_of_one_day,
-#                                            conditional='DTC')
+kern = kerns.get_periodic_kernel(variance=VAR_F,
+                                           lengthscale_time=LEN_TIME,
+                                           lengthscale_space=LEN_SPACE,
+                                           z=z,
+                                           sparse=SPARSE,
+                                           opt_z=OPT_Z,
+                                           conditional='FIC')
 
 ######################### MODEL TRAINING
 logging.info('Define likelilikelihood, model, target function and parameters')

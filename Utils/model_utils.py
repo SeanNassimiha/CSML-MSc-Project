@@ -3,6 +3,8 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from convertbng.util import convert_bng, convert_lonlat
 import geopandas
+from suncalc import get_position, get_times
+
 
 def get_UK_polygon():
     world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
@@ -18,7 +20,7 @@ def datetime_to_epoch(datetime):
     return datetime.astype('int64') // 1e9
 
 
-def create_grid_from_coords(R, t, R_scaler, N_pixels=20, constrained = True):
+def create_grid_from_coords(R, t, R_scaler, N_pixels=20, constrained = True, date_solar = None):
     '''
     Function tha creates a grid from the coordinates of the systems
     R - numpy array of the system coordinates, dimensions = [N_systems, 2] where 2 corresponds to lat,lon
@@ -27,9 +29,11 @@ def create_grid_from_coords(R, t, R_scaler, N_pixels=20, constrained = True):
     N_pixels - number of pixels per dimension of the 2d grid
     constrained - if True, output an Rplot with Nans for the pints outside the UK
     '''
-    min_value_1 = R_scaler.transform([[0, 0]])[0,0] #this is the minimum value in the transformed space that this axis
-    min_value_2 = R_scaler.transform([[0, 0]])[0,1] #this is the minimum value in the transformed space that this axis
 
+    dim_R = R.shape[1]
+    zeros_list = [0] * dim_R
+    min_value_1 = R_scaler.transform([zeros_list])[0,0] #this is the minimum value in the transformed space that this axis has
+    min_value_2 = R_scaler.transform([zeros_list])[0,1] #this is the minimum value in the transformed space that this axis has
     X1range = max(R[:, 0]) - min(R[:, 0])
     X2range = max(R[:, 1]) - min(R[:, 1])
     r1 = np.linspace(max(min(R[:, 0]) - 0.05 * X1range, min_value_1), max(R[:, 0]) + 0.05 * X1range, num=N_pixels)
@@ -37,11 +41,12 @@ def create_grid_from_coords(R, t, R_scaler, N_pixels=20, constrained = True):
     rA, rB = np.meshgrid(r1, r2)
     r = np.hstack((rA.reshape(-1, 1), rB.reshape(-1, 1)))  # Flattening grid for use in kernel functions
     if constrained:
+        if dim_R > 2:
+            r = np.concatenate((r, np.zeros((r.shape[0], dim_R - r.shape[1]))), axis=1)
         #get the dataframe with the coordinates of the r
         shapely_coord = R_scaler.inverse_transform(r)
         longitude_shapely, latitude_shapely = convert_lonlat(shapely_coord[:, 0], shapely_coord[:, 1])
         locs = pd.DataFrame([longitude_shapely, latitude_shapely], index=['Longitud', 'Latitud']).T
-
         uk_polygon = get_UK_polygon()
 
         # find valid points by doing an sjoin
@@ -53,12 +58,20 @@ def create_grid_from_coords(R, t, R_scaler, N_pixels=20, constrained = True):
             valid=lambda d: (~d["index_right"].isna()).astype(int))
         #substitue invalid points with nans
         valid.loc[valid.valid == 0, ['Longitud', 'Latitud']] = np.nan, np.nan
-
         constrained_r = valid[['Longitud', 'Latitud']].values
         bng_constrained = convert_bng(constrained_r[:, 0], constrained_r[:, 1])
-        scaled_constrained = R_scaler.transform(np.array(bng_constrained).T)
+        bng_array = np.array(bng_constrained).T
+        if dim_R > 2:
+            bng_array = np.concatenate((bng_array, np.zeros((bng_array.shape[0], dim_R - bng_array.shape[1]))), axis=1)
+        scaled_constrained = R_scaler.transform(bng_array)
         Rplot = np.tile(scaled_constrained, [t.shape[0], 1, 1])
-
+        if dim_R>2:
+            if date_solar is None:
+                raise Exception("Sorry, you need to insert the dates to calculate the solar altitutdes at the plot locations")
+            else:
+                dates = np.repeat(date_solar[:len(Rplot), np.newaxis], Rplot.shape[1], axis=1)
+                pos = get_position(dates, Rplot[:, :, 0], Rplot[:, :, 1])['altitude']
+                Rplot[:, :, 2] = pos
     else:
         Rplot = np.tile(r, [t.shape[0], 1, 1])
 
@@ -117,29 +130,34 @@ def train_split_3d(t, R, Y,  train_frac = 0.9, split_type = 'Day'):
     :return: train-test splits
     '''
 
-    # Train and Test split
-    if split_type == 'Day':
-        #First find how many full days are there (so excluding the last partial day). The find how many test days.
-        #ig we get 90% train-test split with, say, 2 full days, we will approximate the number of test days up, to 1.
-        n_full_days = int(t.shape[0] / 97)
-        n_test_days = n_full_days - int(train_frac * n_full_days)
-        #select randomly which days to use as test
-        selected_days = np.random.choice(n_full_days, n_test_days, replace=False)
-        #creating here the index of train/test days
-        test_ix = []
-        for day in selected_days:
-            ix = list(np.arange(day * 97, (day + 1) * 97))
-            test_ix.append(ix)
-        test_ix = np.array(test_ix).flatten()
-        train_ix = np.setdiff1d(np.arange(t.shape[0]), test_ix)
-
-    elif split_type == 'Stamp':
-        train_ix = np.sort(np.random.choice(t.shape[0], int(train_frac * len(t)), replace=False))
-
-    elif split_type == 'Cutoff':
-        train_ix = np.arange(int(train_frac * len(t)))
+    if train_frac > 1:
+        #THIS IS FOR THE CASE WHERE I DECIDE HOW MANY TEST POINTS TO USE
+        train_ix = np.arange((len(t) - train_frac))
     else:
-        raise NotImplementedError
+
+        # Train and Test split
+        if split_type == 'Day':
+            #First find how many full days are there (so excluding the last partial day). The find how many test days.
+            #ig we get 90% train-test split with, say, 2 full days, we will approximate the number of test days up, to 1.
+            n_full_days = int(t.shape[0] / 97)
+            n_test_days = n_full_days - int(train_frac * n_full_days)
+            #select randomly which days to use as test
+            selected_days = np.random.choice(n_full_days, n_test_days, replace=False)
+            #creating here the index of train/test days
+            test_ix = []
+            for day in selected_days:
+                ix = list(np.arange(day * 97, (day + 1) * 97))
+                test_ix.append(ix)
+            test_ix = np.array(test_ix).flatten()
+            train_ix = np.setdiff1d(np.arange(t.shape[0]), test_ix)
+
+        elif split_type == 'Stamp':
+            train_ix = np.sort(np.random.choice(t.shape[0], int(train_frac * len(t)), replace=False))
+
+        elif split_type == 'Cutoff':
+            train_ix = np.arange(int(train_frac * len(t)))
+        else:
+            raise NotImplementedError
 
     t_train = t[train_ix]
     t_test = np.delete(t, train_ix, axis=0)
@@ -185,6 +203,10 @@ def scale_2d_train_test_data(R, Y, R_train, R_test, Y_train, Y_test ):
     # Apply scaler on Test Data
     R_test_scaled = np.tile(R_scaler.transform(R_test[0]), (R_test.shape[0],1, 1)) #renormalise R and project across
     Y_test_scaled = Y_scaler.transform(Y_test.flatten()[:,np.newaxis]).reshape(Y_test.shape)
+    #If it's not just lat-lon, don't normalise the rest
+    if R.shape[2]>2:
+        print('removing normalisation of additional inputs')
+        R_scaled[:,:,2:], R_train_scaled[:, :, 2:], R_test_scaled[:,:,2:] = R[:,:,2:], R_train[:,:,2:], R_test[:,:,2:]
 
     return R_scaler, R_scaled, R_train_scaled, R_test_scaled, Y_scaler, Y_scaled, Y_train_scaled, Y_test_scaled
 
