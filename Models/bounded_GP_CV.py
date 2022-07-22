@@ -143,7 +143,7 @@ def run_main():
                                              opt_z=OPT_Z,
                                              conditional='Full',
                                              matern_order='32',
-                                             order=2)
+                                             order=6)
 
             lik = bayesnewton.likelihoods.Beta(scale=30, fix_scale=False, link='probit')
 
