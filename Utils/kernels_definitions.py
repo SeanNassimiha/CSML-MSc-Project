@@ -86,8 +86,8 @@ def get_periodic_kernel(variance_period, variance_matern, lengthscale_time_perio
 
         kern_time_period = bayesnewton.kernels.QuasiPeriodicMatern32(variance= variance_period,
                                                                   lengthscale_periodic= lengthscale_time_period,
-                                                                  period=97,
-                                                                  lengthscale_matern= lengthscale_time_period * 300,
+                                                                  period=97/ 103,
+                                                                  lengthscale_matern= lengthscale_time_period * 20,
                                                                   order=order)
 
         kern_time_matern = bayesnewton.kernels.Matern32(variance= variance_matern, lengthscale=lengthscale_time_matern)
@@ -98,8 +98,8 @@ def get_periodic_kernel(variance_period, variance_matern, lengthscale_time_perio
 
     # kern_time = bayesnewton.kernels.Sum([kern_time_day, kern_time_year])
 
-    kern_space0 = bayesnewton.kernels.Matern32(variance=variance_period, lengthscale=lengthscale_space)
-    kern_space1 = bayesnewton.kernels.Matern32(variance=variance_period, lengthscale=lengthscale_space)
+    kern_space0 = bayesnewton.kernels.Matern32(variance=variance_period , lengthscale=lengthscale_space)
+    kern_space1 = bayesnewton.kernels.Matern32(variance=variance_period , lengthscale=lengthscale_space)
     kern_space = bayesnewton.kernels.Separable([kern_space0, kern_space1])
 
     kern = bayesnewton.kernels.SpatioTemporalKernel(temporal_kernel=kern_time_day,
