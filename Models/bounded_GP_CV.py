@@ -18,7 +18,7 @@ import kernels_definitions as kerns
 ##############################################
 
 #DATA VARIABLES
-SYSTEMS_NUM = 10
+SYSTEMS_NUM = 2
 TIMESTEPS_NUM = 50000
 TRAIN_FRAC = 24  #IF TRAIN_FRAC > 1 THEN IT BECOMES THE LENGTH OF THE TEST SET
 GRID_PIXELS = 10
@@ -26,7 +26,7 @@ GRID_PIXELS = 10
 #OPTIMISATION VARIABLES
 LR_ADAM = 0.01
 LR_NEWTON = 0.5
-ITERS = 10
+ITERS = 1
 
 #GP Variables
 VAR_Y = 0.1
