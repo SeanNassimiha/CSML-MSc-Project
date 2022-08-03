@@ -18,7 +18,7 @@ import kernels_definitions as kerns
 ##############################################
 
 #DATA VARIABLES
-SYSTEMS_NUM = 5
+SYSTEMS_NUM = 100
 TIMESTEPS_NUM = 50000
 TRAIN_FRAC = 24  #IF TRAIN_FRAC > 1 THEN IT BECOMES THE LENGTH OF THE TEST SET
 GRID_PIXELS = 10
@@ -26,7 +26,7 @@ GRID_PIXELS = 10
 #OPTIMISATION VARIABLES
 LR_ADAM = 0.01
 LR_NEWTON = 0.5
-ITERS = 2
+ITERS = 25
 
 #GP Variables
 VAR_Y = 0.8
@@ -42,7 +42,7 @@ LEN_PERIOD = 400 /  (TIMESTEPS_NUM / 100)#24
 #Want to use a sparse approximation
 SPARSE = True
 #Should we optimise the inducing points
-OPT_Z = False  # will be set to False if SPARSE=SPARSE
+OPT_Z = True  # will be set to False if SPARSE=SPARSE
 
 #use a mean field approximation?
 MEAN_FIELD = True
@@ -109,20 +109,15 @@ def run_main():
     data_multiple = data_multiple.reset_index()
     # range_idx = array_of_indices[10000:max_t:iter_step]
 
-    # range_idx = np.array([20248, 20347, 20446, 20545, 20644, 20743, 20842, 20941, 21040,
-    #                       21139, 21238, 21337, 21436, 21535, 21634, 21782, 21881, 21980,
-    #                       22079, 22178, 22277, 22376, 22475, 22574, 22673, 22772, 22871,
-    #                       22970, 23069, 23168, 23267, 23366, 23465, 23564, 23663, 23762,
-    #                       23861, 23960, 24059, 24207, 24306, 24405, 24504, 24603, 24702,
-    #                       24801, 24900, 24999, 25098, 25197, 25296, 25395, 25494, 25593,
-    #                       25692, 25791, 25890, 25989, 26088, 26187, 26335, 26434, 26533,
-    #                       26632, 26731, 26830, 26929, 27028, 27127, 27226, 27325, 27424,
-    #                       27523, 27622, 27721, 27820, 27919, 28018, 28166, 28241])
-
-    range_idx = np.array([26088, 26187, 26335, 26434, 26533,
+    range_idx = np.array([20248, 20347, 20446, 20545, 20644, 20743, 20842, 20941, 21040,
+                          21139, 21238, 21337, 21436, 21535, 21634, 21782, 21881, 21980,
+                          22079, 22178, 22277, 22376, 22475, 22574, 22673, 22772, 22871,
+                          22970, 23069, 23168, 23267, 23366, 23465, 23564, 23663, 23762,
+                          23861, 23960, 24059, 24207, 24306, 24405, 24504, 24603, 24702,
+                          24801, 24900, 24999, 25098, 25197, 25296, 25395, 25494, 25593,
+                          25692, 25791, 25890, 25989, 26088, 26187, 26335, 26434, 26533,
                           26632, 26731, 26830, 26929, 27028, 27127, 27226, 27325, 27424,
                           27523, 27622, 27721, 27820, 27919, 28018, 28166, 28241])
-
     ##############################################
 
     t1 = time.time()
@@ -272,7 +267,6 @@ def run_main():
     NNLs_hsteps_upper = pd.DataFrame(NNLs_hsteps_upper).rename(columns={0: 'NNLs_hsteps_upper'})
     NNLs_hsteps_lower = pd.DataFrame(NNLs_hsteps_lower).rename(columns={0: 'NNLs_hsteps_lower'})
 
-
     return error_evolution, MAE_hsteps, NNLs_hsteps, NNLs_hsteps_upper, NNLs_hsteps_lower
 
 
@@ -287,9 +281,9 @@ if __name__ == '__main__':
     print(f'NNLs_hsteps_lower is {NNLs_hsteps_lower}')
 
 
-    error_evolution.to_csv('error_evolution')
-    MAE_hsteps.to_csv('error_evolution')
-    NNLs_hsteps.to_csv('NNLs_hsteps')
-    NNLs_hsteps_upper.to_csv('NNLs_hsteps_upper')
-    NNLs_hsteps_lower.to_csv('NNLs_hsteps_lower')
+    # error_evolution.to_csv('error_evolution')
+    # MAE_hsteps.to_csv('error_evolution')
+    # NNLs_hsteps.to_csv('NNLs_hsteps')
+    # NNLs_hsteps_upper.to_csv('NNLs_hsteps_upper')
+    # NNLs_hsteps_lower.to_csv('NNLs_hsteps_lower')
 
