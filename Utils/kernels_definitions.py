@@ -162,3 +162,4 @@ def get_periodic_kernel(variance_period, variance_matern, lengthscale_time_perio
 #                                                 sparse=SPARSE,
 #                                                 opt_z=OPT_Z,
 #                                                 conditional='Full')
+
