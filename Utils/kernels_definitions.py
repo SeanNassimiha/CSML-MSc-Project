@@ -63,18 +63,18 @@ def get_separate_kernel(variance, lengthscale_time, lengthscale_space, z, sparse
                                                     conditional=conditional)
     return kern
 
-def get_periodic_kernel(variance_period, variance_matern, lengthscale_time_period, lengthscale_time_matern, lengthscale_space, z, sparse, opt_z, conditional='Full', matern_order='32', order=6,
+def get_periodic_kernel(variance_period, variance_matern, lengthscale_time_period, lengthscale_time_matern, lengthscale_space, z, sparse, opt_z, timestep_n, conditional='Full', matern_order='32', order=6,
                         ):
 
     # kern_time_year = bayesnewton.kernels.QuasiPeriodicMatern32(variance=variance,
     #                                                     lengthscale_periodic = lengthscale_time,
-    #                                                     period = 97 * 365,
+    #                                                     period = 96 * 365,
     #                                                     lengthscale_matern= lengthscale_time * 100)
 
     if matern_order == '12':
         kern_time_period = bayesnewton.kernels.QuasiPeriodicMatern12(variance= variance_period,
                                                                   lengthscale_periodic=lengthscale_time_period,
-                                                                  period=97,
+                                                                  period=96 / (timestep_n/100),
                                                                   lengthscale_matern=lengthscale_time_period * 30,
                                                                   order=order)
 
@@ -86,7 +86,7 @@ def get_periodic_kernel(variance_period, variance_matern, lengthscale_time_perio
 
         kern_time_period = bayesnewton.kernels.QuasiPeriodicMatern32(variance= variance_period,
                                                                   lengthscale_periodic= lengthscale_time_period,
-                                                                  period=97/ 103,
+                                                                  period=96/ (timestep_n/100),
                                                                   lengthscale_matern= lengthscale_time_period * 20,
                                                                   order=order)
 

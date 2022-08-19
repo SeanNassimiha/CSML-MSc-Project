@@ -92,14 +92,14 @@ def run_main():
     R_scaled_frozen = R_scaled[0]
 
     # z = R_scaled[2, ...]
-    z = R_scaled[2, ::7]
+    z = R_scaled[2, ...]
 
 
     ##############################################
 
     # FIXED WINDOW OF 5000 train and 24 test, the 5000 train slide forward
-    length_window = 97 * 100
-    max_t = 14000  # len(data_multiple) - length_window - 24
+    length_window = 96 * 50
+    max_t = len(data_multiple) - length_window - 24 #14000
     iter_step = 50
     # HERE BUILDING ARRAY OF STARTING ts
     data_multiple = data_multiple.set_index('datetime')
@@ -107,17 +107,18 @@ def run_main():
     array_of_indices = data_multiple.reset_index()[(data_multiple.reset_index().datetime.dt.hour > 9) & (
                 data_multiple.reset_index().datetime.dt.hour < 14)].index.values
     data_multiple = data_multiple.reset_index()
-    # range_idx = array_of_indices[10000:max_t:iter_step]
+    array_of_indices = array_of_indices[array_of_indices < max_t]
+    range_idx = array_of_indices[length_window + 96:max_t:iter_step][-80:]
 
-    range_idx = np.array([20248, 20347, 20446, 20545, 20644, 20743, 20842, 20941, 21040,
-                          21139, 21238, 21337, 21436, 21535, 21634, 21782, 21881, 21980,
-                          22079, 22178, 22277, 22376, 22475, 22574, 22673, 22772, 22871,
-                          22970, 23069, 23168, 23267, 23366, 23465, 23564, 23663, 23762,
-                          23861, 23960, 24059, 24207, 24306, 24405, 24504, 24603, 24702,
-                          24801, 24900, 24999, 25098, 25197, 25296, 25395, 25494, 25593,
-                          25692, 25791, 25890, 25989, 26088, 26187, 26335, 26434, 26533,
-                          26632, 26731, 26830, 26929, 27028, 27127, 27226, 27325, 27424,
-                          27523, 27622, 27721, 27820, 27919, 28018, 28166, 28241])
+    # range_idx = np.array([20248, 20347, 20446, 20545, 20644, 20743, 20842, 20941, 21040,
+    #                       21139, 21238, 21337, 21436, 21535, 21634, 21782, 21881, 21980,
+    #                       22079, 22178, 22277, 22376, 22475, 22574, 22673, 22772, 22871,
+    #                       22970, 23069, 23168, 23267, 23366, 23465, 23564, 23663, 23762,
+    #                       23861, 23960, 24059, 24207, 24306, 24405, 24504, 24603, 24702,
+    #                       24801, 24900, 24999, 25098, 25197, 25296, 25395, 25494, 25593,
+    #                       25692, 25791, 25890, 25989, 26088, 26187, 26335, 26434, 26533,
+    #                       26632, 26731, 26830, 26929, 27028, 27127, 27226, 27325, 27424,
+    #                       27523, 27622, 27721, 27820, 27919, 28018, 28166, 28241])
     ##############################################
 
     t1 = time.time()
