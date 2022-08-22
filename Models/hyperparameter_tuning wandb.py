@@ -12,6 +12,8 @@ import kernels_definitions as kerns
 from bayes_opt import BayesianOptimization
 from bayes_opt.util import Colours
 from jax import vmap
+import wandb
+wandb.login()
 
 
 logging.basicConfig(format='%(asctime)s %(message)s', level = logging.INFO)
@@ -29,7 +31,7 @@ PARAMETERS TO OPTIMIZE:
 - matern_order: (1, 3.99) with 1 = 1/2, 2 = 3/2, 3 = 5/2
 '''
 
-def preprocessing(system_num, timesteps_num, train_frac, test_system_num = 100):
+def preprocessing(system_num, timesteps_num, train_frac, test_system_num = 100, london = True):
 
     ######################### IMPORTS
     logging.info('Importing the data')
@@ -44,6 +46,9 @@ def preprocessing(system_num, timesteps_num, train_frac, test_system_num = 100):
 
     a = data_multiple.reset_index()
     stacked = mutils.stack_dataframe(a, lats, longs)
+    if london:
+        stacked = stacked[
+            (stacked.latitude < 52.5) & (stacked.latitude > 50.5) & (stacked.longitude > -1) & (stacked.longitude < 1)]
 
     X = np.array(stacked[['epoch', 'longitude', 'latitude']])
     Y = np.array(stacked[['PV']])
@@ -73,6 +78,10 @@ def preprocessing(system_num, timesteps_num, train_frac, test_system_num = 100):
     data_unseen = data.iloc[:, system_num:system_num + test_system_num][:timesteps_num].reset_index()
 
     stacked_unseen = mutils.stack_dataframe(data_unseen, lats, longs)
+    if london:
+        stacked_unseen = stacked_unseen[
+            (stacked_unseen.latitude < 52.5) & (stacked_unseen.latitude > 50.5) & (stacked_unseen.longitude > -1) & (
+                        stacked_unseen.longitude < 1)]
 
     X_unseen = np.array(stacked_unseen[['epoch', 'longitude', 'latitude']])
     Y_unseen = np.array(stacked_unseen[['PV']])
@@ -114,6 +123,7 @@ def evaluate_test_mae(z, t, t_train, R_train_scaled, Y_train, iters, R_unseen_sc
         model = bayesnewton.models.MarkovVariationalGP(kernel=kern, likelihood=lik, X=t_train, R=R_train_scaled,
                                                        Y=Y_train)
 
+    print(f't_train shape is {t_train.shape}, R_train shape is {R_train_scaled.shape}')
     opt_hypers = objax.optimizer.Adam(model.vars())
     energy = objax.GradValues(model.energy, model.vars())
 
@@ -144,18 +154,10 @@ def evaluate_test_mae(z, t, t_train, R_train_scaled, Y_train, iters, R_unseen_sc
             # if number_of_minibatches > 1:
                 # print(f'Doing minibatch {mini_batch}')
             loss = train_op(mini_batches_indices[mini_batch])
+            wandb.log({'loss':loss[0]})
         print('iter %2d, energy: %1.4f' % (i, loss[0]))
     t1 = time.time()
     print('optimisation time: %2.2f secs' % (t1 - t0))
-
-    # logging.info('Get the system specific predictions')
-    # GET THE SYSTEM SPECIFIC PREDICTIONS (NOT THE TOTAL INTERPOLATION)
-    # posterior_mean_ts, posterior_var_ts = model.predict(X=t, R=R_scaled)
-    # posterior_mean_rescaled = Y_scaler.inverse_transform(posterior_mean_ts) * capacities
-    #
-    # neg_mae_test = - np.nanmean(abs(np.squeeze(Y[test_mask] ) - np.squeeze(posterior_mean_rescaled[test_mask])))
-    # # print(f'The test MAE is {mae_test.round(3)}')
-
     f_mean_unseen, f_var_unseen = model.predict(X=t, R=R_unseen_scaled)
 
     # GET THE Y PREDICTIONS FROM THE F VALUES
@@ -168,48 +170,56 @@ def evaluate_test_mae(z, t, t_train, R_train_scaled, Y_train, iters, R_unseen_sc
     Y_unseen = Y_unseen[:, :, 0]
 
     # adjust this for the correct quantities
-    neg_mae_test = - np.nanmean(abs(np.squeeze(Y_unseen) - np.squeeze(posterior_mean_unseen)))
+    mae_test =np.nanmean(abs(np.squeeze(Y_unseen) - np.squeeze(posterior_mean_unseen)))
 
-    return neg_mae_test
+    wandb.run.summary['mae_test'] = mae_test
+    wandb.run.summary['posterior_mean_unseen'] = posterior_mean_unseen
+    wandb.run.summary['posterior_var_unseen'] = posterior_var_unseen
 
-def optimise_GP(z, t, t_train, R_train_scaled, Y_train, iters, R_unseen_scaled, Y_unseen):
-    ''' Apply Bayesian Optimisation to GP hyperparameters'''
-    def GP_evaluation(lr_adam, lr_newton, var_y, var_f, len_time, len_space, cont_mean_field, cont_matern_order):
-        ''' Wrapper of evaluate_test_mae function'''
-
-        matern_dict = {1: '12', 2: '32', 3: '52'}
-        mean_field_dict = {0: False, 1: True}
-
-        #THIS WRAPPER IS NEEDED TO DEAL WITH DISCRETE VARIABLES
-        mean_field = mean_field_dict[int(cont_mean_field)]
-        matern_order = matern_dict[int(cont_matern_order)]
-
-        return evaluate_test_mae(z, t, t_train, R_train_scaled, Y_train, iters, R_unseen_scaled, Y_unseen,  #this is data col
-                            lr_adam = lr_adam, lr_newton = lr_newton,
-                            var_y = var_y, var_f = var_f,
-                            len_time =  len_time, len_space = len_space,
-                            mean_field = mean_field, matern_order = matern_order)
-
-    optimiser = BayesianOptimization(
-        f = GP_evaluation,
-        pbounds = {'lr_adam' : (0.01, 0.5), 'lr_newton': (0.01, 1), 'var_y': (0.1, 1), 'var_f': (0.1, 1),
-            'len_time': (1, 24), 'len_space': (0.01, 1.5), 'cont_mean_field': (0, 1.99), 'cont_matern_order': (1, 3.99)},
-        verbose = 2
-        )
-    optimiser.maximize(n_iter = 21, init_points = 3)
-    print('final result',optimiser.max)
+    wandb.finish()
 
 if __name__ == "__main__":
 
-    SYSTEMS_NUM = 50  # 883 is the max
-    TIMESTEPS_NUM = 35295  # 70571 is the max
+    SYSTEMS_NUM = 120  # 883 is the max
+    TIMESTEPS_NUM =  35295  # 70571 is the max
     TRAIN_FRAC = 2
-    SPARSE = True # Want to use a sparse approximation
+    TEST_STATIONS = 271 - 120
+    SPARSE = True  # Want to use a sparse approximation
     MINI_BATCH_SIZE = None  # None if you don't want them. Yann LeCun suggests <= 32
-    ITERS = 20
-
+    ITERS = 20  # 20
     z, t, t_train, R_train_scaled, Y_train, R_unseen_scaled, Y_unseen = preprocessing(system_num=SYSTEMS_NUM,
-                                                                                                 timesteps_num=TIMESTEPS_NUM,
-                                                                                                 train_frac=TRAIN_FRAC)
-    print(Colours.yellow("--- Optimizing GP ---"))
-    optimise_GP(z, t, t_train, R_train_scaled, Y_train, ITERS, R_unseen_scaled, Y_unseen)
+                                                                                      timesteps_num=TIMESTEPS_NUM,
+                                                                                      train_frac=TRAIN_FRAC,
+                                                                                      test_system_num = TEST_STATIONS)
+
+    def wandb_sweep():
+        wandb.init()  # project="Nowcasting", entity="snassimiha"
+        config = wandb.config
+        evaluate_test_mae(z, t, t_train, R_train_scaled, Y_train, ITERS, R_unseen_scaled, Y_unseen,  # this is data col
+                          lr_adam=config.lr_adam, lr_newton=config.lr_newton,
+                          var_y=config.var_y, var_f=config.var_f,
+                          len_time=config.len_time, len_space=config.len_space,
+                          mean_field=config.mean_field, matern_order=config.matern_order)
+
+
+    sweep_config = {'name': 'Interpolation_Study',
+                        'method': 'bayes',
+                        'parameters':
+                            {'lr_adam': {'min': 0.01, 'max': 0.5},
+                             'lr_newton': {'min': 0.01, 'max': 1.},
+                             'var_y': {'min': 0.1, 'max': 1.},
+                             'var_f': {'min': 0.1, 'max': 1.},
+                             'len_time': {'min': 1, 'max': 48},
+                             'len_space': {'min': 0.01, 'max': 1.5},
+                             'mean_field': {"values": [True, False]},
+                             'matern_order': {"values": ['12', '32', '52']}}}
+
+    metric = {
+        'name': 'mae_test',
+        'goal': 'minimize'
+    }
+
+    sweep_config['metric'] = metric
+    sweep_id = wandb.sweep(sweep_config, project="Nowcasting")
+
+    wandb.agent(sweep_id, function=wandb_sweep, project="Nowcasting")
